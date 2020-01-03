@@ -25,6 +25,8 @@ from kmip.core.factories import attributes
 from kmip.core.attributes import CryptographicParameters
 from kmip.core.attributes import DerivationParameters
 
+from kmip.core.messages import payloads
+
 from kmip.pie import exceptions
 from kmip.pie import factory
 from kmip.pie import objects as pobjects
@@ -100,6 +102,7 @@ class ProxyKmipClient(object):
         self.logger = logging.getLogger(__name__)
 
         self.attribute_factory = attributes.AttributeFactory()
+        self.attribute_value_factory = self.attribute_factory.value_factory
         self.object_factory = factory.ObjectFactory()
 
         # TODO (peter-hamilton) Consider adding validation checks for inputs.
@@ -238,7 +241,14 @@ class ProxyKmipClient(object):
         key_attributes.extend(common_attributes)
 
         if name:
-            key_attributes.extend(self._build_name_attribute(name))
+            key_attributes.extend(
+                [
+                    self.attribute_factory.create_attribute(
+                        enums.AttributeType.NAME,
+                        name
+                    )
+                ]
+            )
 
         template = cobjects.TemplateAttribute(attributes=key_attributes)
 
@@ -313,45 +323,54 @@ class ProxyKmipClient(object):
         )
 
         common_attributes.extend([algorithm_attribute, length_attribute])
-        template = cobjects.CommonTemplateAttribute(
-            attributes=common_attributes
+        template = cobjects.TemplateAttribute(
+            attributes=common_attributes,
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
         )
 
         # Create public / private specific attributes
         public_template = None
-        names = None
-        if public_name:
-            names = self._build_name_attribute(name=public_name)
         attrs = []
+        if public_name:
+            attrs.append(
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.NAME,
+                    public_name
+                )
+            )
         if public_usage_mask:
-            attrs = [
+            attrs.append(
                 self.attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
                     public_usage_mask
                 )
-            ]
-        if names or attrs:
-            public_template = cobjects.PublicKeyTemplateAttribute(
-                names=names,
-                attributes=attrs
+            )
+        if attrs:
+            public_template = cobjects.TemplateAttribute(
+                attributes=attrs,
+                tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
             )
 
         private_template = None
-        names = None
-        if private_name:
-            names = self._build_name_attribute(name=private_name)
         attrs = []
+        if private_name:
+            attrs.append(
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.NAME,
+                    private_name
+                )
+            )
         if private_usage_mask:
-            attrs = [
+            attrs.append(
                 self.attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
                     private_usage_mask
                 )
-            ]
-        if names or attrs:
-            private_template = cobjects.PrivateKeyTemplateAttribute(
-                names=names,
-                attributes=attrs
+            )
+        if attrs:
+            private_template = cobjects.TemplateAttribute(
+                attributes=attrs,
+                tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
             )
 
         # Create the asymmetric key pair and handle the results
@@ -362,13 +381,134 @@ class ProxyKmipClient(object):
 
         status = result.result_status.value
         if status == enums.ResultStatus.SUCCESS:
-            public_uid = result.public_key_uuid.value
-            private_uid = result.private_key_uuid.value
+            public_uid = result.public_key_uuid
+            private_uid = result.private_key_uuid
             return public_uid, private_uid
         else:
             reason = result.result_reason.value
             message = result.result_message.value
             raise exceptions.KmipOperationFailure(status, reason, message)
+
+    @is_connected
+    def delete_attribute(self, unique_identifier=None, **kwargs):
+        """
+        Delete an attribute from a KMIP managed object.
+
+        Args:
+            unique_identifier (string): The ID of the managed object.
+            **kwargs (various): A placeholder for attribute values used to
+                identify the attribute to delete. For KMIP 1.0 - 1.4, the
+                supported parameters are:
+                    attribute_name (string): The name of the attribute to
+                        delete. Required.
+                    attribute_index (int): The index of the attribute to
+                        delete. Defaults to zero.
+                For KMIP 2.0+, the supported parameters are:
+                    current_attribute (struct): A CurrentAttribute object
+                        containing the attribute to delete. Required if the
+                        attribute reference is not specified.
+                    attribute_reference (struct): An AttributeReference
+                        object containing the name of the attribute to
+                        delete. Required if the current attribute  is not
+                        specified.
+
+        Returns:
+            string: The ID of the managed object the attribute was deleted
+                from.
+            struct: A Primitive object representing the deleted attribute.
+                Only returned if used for KMIP 1.0 - 1.4 messages.
+        """
+        request_payload = payloads.DeleteAttributeRequestPayload(
+            unique_identifier=unique_identifier,
+            attribute_name=kwargs.get("attribute_name"),
+            attribute_index=kwargs.get("attribute_index"),
+            current_attribute=kwargs.get("current_attribute"),
+            attribute_reference=kwargs.get("attribute_reference")
+        )
+        response_payload = self.proxy.send_request_payload(
+            enums.Operation.DELETE_ATTRIBUTE,
+            request_payload
+        )
+
+        return response_payload.unique_identifier, response_payload.attribute
+
+    @is_connected
+    def set_attribute(self, unique_identifier=None, **kwargs):
+        """
+        Set an attribute on a KMIP managed object.
+
+        Args:
+            unique_identifier (string): The ID of the managed object.
+            **kwargs (various): A placeholder for attribute-related fields.
+                Supported parameters include:
+                    attribute_name (string): The name of the attribute being
+                        set. Required.
+                    attribute_value (various): The value of the attribute
+                        being set. Required.
+
+                Here is an example. To set an object's 'sensitive' attribute
+                to True, specify:
+                    attribute_name='Sensitive'
+                    attribute_value=True
+
+                For a list of all supported attributes, see the
+                AttributeValueFactory.
+
+        Returns:
+            string: The ID of the managed object the attribute was set on.
+        """
+        a = self.attribute_value_factory.create_attribute_value_by_enum(
+            enums.convert_attribute_name_to_tag(kwargs.get("attribute_name")),
+            kwargs.get("attribute_value")
+        )
+        request_payload = payloads.SetAttributeRequestPayload(
+            unique_identifier=unique_identifier,
+            new_attribute=cobjects.NewAttribute(attribute=a)
+        )
+        response_payload = self.proxy.send_request_payload(
+            enums.Operation.SET_ATTRIBUTE,
+            request_payload
+        )
+
+        return response_payload.unique_identifier
+
+    @is_connected
+    def modify_attribute(self, unique_identifier=None, **kwargs):
+        """
+        Set an attribute on a KMIP managed object.
+
+        Args:
+            unique_identifier (string): The ID of the managed object.
+            **kwargs (various): A placeholder for attribute values used to
+                identify the attribute to modify. For KMIP 1.0 - 1.4, the
+                supported parameters are:
+                    attribute (struct): An Attribute object containing the
+                        name and index of the existing attribute and the
+                        new value for that attribute.
+                For KMIP 2.0+, the supported parameters are:
+                    current_attribute (struct): A CurrentAttribute object
+                        containing the attribute to modify. Required if the
+                        attribute is multivalued.
+                    attribute_reference (struct): A NewAttribute object
+                        containing the new attribute value. Required.
+
+        Returns:
+            string: The ID of the managed object the attribute was modified on.
+            struct: An Attribute object representing the newly modified
+                attribute. Only returned if used for KMIP 1.0 - 1.4 messages.
+        """
+        request_payload = payloads.ModifyAttributeRequestPayload(
+            unique_identifier=unique_identifier,
+            attribute=kwargs.get("attribute"),
+            current_attribute=kwargs.get("current_attribute"),
+            new_attribute=kwargs.get("new_attribute")
+        )
+        response_payload = self.proxy.send_request_payload(
+            enums.Operation.MODIFY_ATTRIBUTE,
+            request_payload
+        )
+
+        return response_payload.unique_identifier, response_payload.attribute
 
     @is_connected
     def register(self, managed_object):
@@ -658,7 +798,7 @@ class ProxyKmipClient(object):
 
     @is_connected
     def locate(self, maximum_items=None, storage_status_mask=None,
-               object_group_member=None, attributes=None):
+               object_group_member=None, attributes=None, offset_items=None):
         """
         Search for managed objects, depending on the attributes specified in
         the request.
@@ -666,6 +806,8 @@ class ProxyKmipClient(object):
         Args:
             maximum_items (integer): Maximum number of object identifiers the
                 server MAY return.
+            offset_items (integer): Number of object identifiers the server
+                should skip before returning results.
             storage_status_mask (integer): A bit mask that indicates whether
                 on-line or archived objects are to be searched.
             object_group_member (ObjectGroupMember): An enumeration that
@@ -685,6 +827,9 @@ class ProxyKmipClient(object):
         if maximum_items is not None:
             if not isinstance(maximum_items, six.integer_types):
                 raise TypeError("maximum_items must be an integer")
+        if offset_items is not None:
+            if not isinstance(offset_items, six.integer_types):
+                raise TypeError("offset items must be an integer")
         if storage_status_mask is not None:
             if not isinstance(storage_status_mask, six.integer_types):
                 raise TypeError("storage_status_mask must be an integer")
@@ -702,8 +847,12 @@ class ProxyKmipClient(object):
 
         # Search for managed objects and handle the results
         result = self.proxy.locate(
-                    maximum_items, storage_status_mask,
-                    object_group_member, attributes)
+            maximum_items=maximum_items,
+            offset_items=offset_items,
+            storage_status_mask=storage_status_mask,
+            object_group_member=object_group_member,
+            attributes=attributes
+        )
 
         status = result.result_status.value
         if status == enums.ResultStatus.SUCCESS:
@@ -1591,19 +1740,6 @@ class ProxyKmipClient(object):
             )
 
         return common_attributes
-
-    def _build_name_attribute(self, name=None):
-        '''
-        Build a name attribute, returned in a list for ease
-        of use in the caller
-        '''
-        name_list = []
-        if name:
-            name_list.append(self.attribute_factory.create_attribute(
-                enums.AttributeType.NAME,
-                name)
-            )
-        return name_list
 
     def __enter__(self):
         self.open()

@@ -129,6 +129,7 @@ class AttributePolicy(object):
         """
         self._version = version
 
+        # TODO (peterhamilton) Alphabetize these
         self._attribute_rule_sets = {
             'Unique Identifier': AttributeRuleSet(
                 True,
@@ -521,7 +522,8 @@ class AttributePolicy(object):
                     enums.ObjectType.SECRET_DATA,
                     enums.ObjectType.OPAQUE_DATA
                 ),
-                contents.ProtocolVersion(1, 0)
+                contents.ProtocolVersion(1, 0),
+                contents.ProtocolVersion(2, 0)
             ),
             'Cryptographic Usage Mask': AttributeRuleSet(
                 True,
@@ -871,10 +873,10 @@ class AttributePolicy(object):
             'Object Group': AttributeRuleSet(
                 False,
                 ('server', 'client'),
-                False,
-                False,
-                False,
-                False,
+                True,
+                True,
+                True,
+                True,
                 (
                     enums.Operation.CREATE,
                     enums.Operation.CREATE_KEY_PAIR,
@@ -1076,6 +1078,30 @@ class AttributePolicy(object):
                 ),
                 contents.ProtocolVersion(1, 0)
             ),
+            "Sensitive": AttributeRuleSet(
+                True,
+                ("server", "client"),
+                True,
+                True,
+                False,
+                False,
+                (
+                    enums.Operation.CREATE,
+                    enums.Operation.CREATE_KEY_PAIR,
+                    enums.Operation.REGISTER
+                ),
+                (
+                    enums.ObjectType.CERTIFICATE,
+                    enums.ObjectType.SYMMETRIC_KEY,
+                    enums.ObjectType.PUBLIC_KEY,
+                    enums.ObjectType.PRIVATE_KEY,
+                    enums.ObjectType.SPLIT_KEY,
+                    enums.ObjectType.TEMPLATE,
+                    enums.ObjectType.SECRET_DATA,
+                    enums.ObjectType.OPAQUE_DATA
+                ),
+                contents.ProtocolVersion(1, 4)
+            )
         }
 
     def is_attribute_supported(self, attribute):
@@ -1114,6 +1140,34 @@ class AttributePolicy(object):
                 return False
         else:
             return False
+
+    def is_attribute_deletable_by_client(self, attribute):
+        """
+        Check if the attribute can be deleted by the client.
+
+        Args:
+            attribute (string): The name of the attribute (e.g., "Name").
+
+        Returns:
+            bool: True if the attribute can be deleted by the client. False
+                otherwise.
+        """
+        rule_set = self._attribute_rule_sets.get(attribute)
+        return rule_set.deletable_by_client
+
+    def is_attribute_modifiable_by_client(self, attribute):
+        """
+        Check if the attribute can be modified by the client.
+
+        Args:
+            attribute (string): The name of the attribute (e.g., "Name").
+
+        Returns:
+            bool: True if the attribute can be modified by the client. False
+                otherwise.
+        """
+        rule_set = self._attribute_rule_sets.get(attribute)
+        return rule_set.modifiable_by_client
 
     def is_attribute_applicable_to_object_type(self, attribute, object_type):
         """

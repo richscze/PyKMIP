@@ -39,9 +39,12 @@ from kmip.core.enums import ConformanceClause
 from kmip.core.enums import CredentialType
 from kmip.core.enums import Operation as OperationEnum
 
+from kmip.core import exceptions
+
 from kmip.core.factories.credentials import CredentialFactory
 
 from kmip.core import objects
+from kmip.core import primitives
 
 from kmip.core.messages.contents import Authentication
 from kmip.core.messages.contents import BatchCount
@@ -52,7 +55,7 @@ from kmip.core.messages import messages
 
 from kmip.core.messages import payloads
 
-from kmip.services.server.kmip_protocol import KMIPProtocol
+from kmip.services.kmip_protocol import KMIPProtocol
 
 from kmip.core.config_helper import ConfigHelper
 
@@ -308,6 +311,120 @@ class KMIPProxy(object):
                 # anything. In this case, ignore the error.
                 pass
             self.socket = None
+
+    def send_request_payload(self, operation, payload, credential=None):
+        """
+        Send a KMIP request.
+
+        Args:
+            operation (enum): An Operation enumeration specifying the type
+                of operation to be requested. Required.
+            payload (struct): A RequestPayload structure containing the
+                parameters for a specific KMIP operation. Required.
+            credential (struct): A Credential structure containing
+                authentication information for the server. Optional, defaults
+                to None.
+
+        Returns:
+            response (struct): A ResponsePayload structure containing the
+                results of the KMIP operation specified in the request.
+
+        Raises:
+            TypeError: if the payload is not a RequestPayload instance or if
+                the operation and payload type do not match
+            InvalidMessage: if the response message does not have the right
+                number of response payloads, or does not match the request
+                operation
+        """
+        if not isinstance(payload, payloads.RequestPayload):
+            raise TypeError(
+                "The request payload must be a RequestPayload object."
+            )
+
+        # TODO (peterhamilton) For now limit this to the new Delete/Set/Modify
+        # Attribute operations. Migrate over existing operations to use
+        # this method instead.
+        if operation == enums.Operation.DELETE_ATTRIBUTE:
+            if not isinstance(payload, payloads.DeleteAttributeRequestPayload):
+                raise TypeError(
+                    "The request payload for the DeleteAttribute operation "
+                    "must be a DeleteAttributeRequestPayload object."
+                )
+        elif operation == enums.Operation.SET_ATTRIBUTE:
+            if not isinstance(payload, payloads.SetAttributeRequestPayload):
+                raise TypeError(
+                    "The request payload for the SetAttribute operation must "
+                    "be a SetAttributeRequestPayload object."
+                )
+        elif operation == enums.Operation.MODIFY_ATTRIBUTE:
+            if not isinstance(payload, payloads.ModifyAttributeRequestPayload):
+                raise TypeError(
+                    "The request payload for the ModifyAttribute operation "
+                    "must be a ModifyAttributeRequestPayload object."
+                )
+
+        batch_item = messages.RequestBatchItem(
+            operation=primitives.Enumeration(
+                enums.Operation,
+                operation,
+                tag=enums.Tags.OPERATION
+            ),
+            request_payload=payload
+        )
+
+        request_message = self._build_request_message(credential, [batch_item])
+        response_message = self._send_and_receive_message(request_message)
+
+        if len(response_message.batch_items) != 1:
+            raise exceptions.InvalidMessage(
+                "The response message does not have the right number of "
+                "requested operation results."
+            )
+
+        batch_item = response_message.batch_items[0]
+
+        if batch_item.result_status.value != enums.ResultStatus.SUCCESS:
+            raise exceptions.OperationFailure(
+                batch_item.result_status.value,
+                batch_item.result_reason.value,
+                batch_item.result_message.value
+            )
+
+        if batch_item.operation.value != operation:
+            raise exceptions.InvalidMessage(
+                "The response message does not match the request operation."
+            )
+
+        # TODO (peterhamilton) Same as above for now.
+        if batch_item.operation.value == enums.Operation.DELETE_ATTRIBUTE:
+            if not isinstance(
+                batch_item.response_payload,
+                payloads.DeleteAttributeResponsePayload
+            ):
+                raise exceptions.InvalidMessage(
+                    "Invalid response payload received for the "
+                    "DeleteAttribute operation."
+                )
+        elif batch_item.operation.value == enums.Operation.SET_ATTRIBUTE:
+            if not isinstance(
+                batch_item.response_payload,
+                payloads.SetAttributeResponsePayload
+            ):
+                raise exceptions.InvalidMessage(
+                    "Invalid response payload received for the SetAttribute "
+                    "operation."
+                )
+        elif batch_item.operation.value == enums.Operation.MODIFY_ATTRIBUTE:
+            if not isinstance(
+                batch_item.response_payload,
+                payloads.ModifyAttributeResponsePayload
+            ):
+                raise exceptions.InvalidMessage(
+                    "Invalid response payload received for the "
+                    "ModifyAttribute operation."
+                )
+
+        return batch_item.response_payload
 
     def create(self, object_type, template_attribute, credential=None):
         return self._create(object_type=object_type,
@@ -694,11 +811,13 @@ class KMIPProxy(object):
             return results[0]
 
     def locate(self, maximum_items=None, storage_status_mask=None,
-               object_group_member=None, attributes=None, credential=None):
+               object_group_member=None, attributes=None, credential=None,
+               offset_items=None):
         return self._locate(maximum_items=maximum_items,
                             storage_status_mask=storage_status_mask,
                             object_group_member=object_group_member,
-                            attributes=attributes, credential=credential)
+                            attributes=attributes, credential=credential,
+                            offset_items=offset_items)
 
     def query(self, batch=False, query_functions=None, credential=None):
         """
@@ -1222,8 +1341,8 @@ class KMIPProxy(object):
         payload_public_key_template_attribute = None
 
         if payload is not None:
-            payload_private_key_uuid = payload.private_key_uuid
-            payload_public_key_uuid = payload.public_key_uuid
+            payload_private_key_uuid = payload.private_key_unique_identifier
+            payload_public_key_uuid = payload.public_key_unique_identifier
             payload_private_key_template_attribute = \
                 payload.private_key_template_attribute
             payload_public_key_template_attribute = \
@@ -1476,12 +1595,14 @@ class KMIPProxy(object):
         return result
 
     def _locate(self, maximum_items=None, storage_status_mask=None,
-                object_group_member=None, attributes=None, credential=None):
+                object_group_member=None, attributes=None, credential=None,
+                offset_items=None):
 
         operation = Operation(OperationEnum.LOCATE)
 
         payload = payloads.LocateRequestPayload(
             maximum_items=maximum_items,
+            offset_items=offset_items,
             storage_status_mask=storage_status_mask,
             object_group_member=object_group_member,
             attributes=attributes
@@ -1576,8 +1697,10 @@ class KMIPProxy(object):
             return ProtocolVersion(1, 2)
         elif self.kmip_version == enums.KMIPVersion.KMIP_1_3:
             return ProtocolVersion(1, 3)
-        else:
+        elif self.kmip_version == enums.KMIPVersion.KMIP_1_4:
             return ProtocolVersion(1, 4)
+        else:
+            return ProtocolVersion(2, 0)
 
     def _build_request_message(self, credential, batch_items):
         protocol_version = self._build_protocol_version()

@@ -13,9 +13,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from kmip.core import enums
 from kmip.core.enums import Operation
 from kmip.core.enums import ResultStatus
-from kmip.core.enums import RevocationReasonCode
 
 from kmip.demos import utils
 
@@ -46,8 +46,8 @@ if __name__ == '__main__':
 
     # Activate the object
     result = client.revoke(
+        enums.RevocationReasonCode.KEY_COMPROMISE,
         uuid,
-        RevocationReasonCode.UNSPECIFIED,
         'Demo revocation message')
     client.close()
 

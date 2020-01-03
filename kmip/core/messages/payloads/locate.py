@@ -16,13 +16,13 @@
 import six
 
 from kmip.core import enums
-from kmip.core import exceptions
 from kmip.core import objects
 from kmip.core import primitives
 from kmip.core import utils
+from kmip.core.messages.payloads import base
 
 
-class LocateRequestPayload(primitives.Struct):
+class LocateRequestPayload(base.RequestPayload):
     """
     A request payload for the Locate operation.
 
@@ -65,7 +65,7 @@ class LocateRequestPayload(primitives.Struct):
                 objects. Optional, defaults to None. Required for read/write
                 for KMIP 2.0+.
         """
-        super(LocateRequestPayload, self).__init__(enums.Tags.REQUEST_PAYLOAD)
+        super(LocateRequestPayload, self).__init__()
 
         self._maximum_items = None
         self._offset_items = None
@@ -262,11 +262,6 @@ class LocateRequestPayload(primitives.Struct):
                     attributes
                 )
                 self._attributes = temp_attr.attributes
-            else:
-                raise exceptions.InvalidKmipEncoding(
-                    "The Locate request payload encoding is missing the "
-                    "attributes structure."
-                )
 
     def write(self, output_buffer, kmip_version=enums.KMIPVersion.KMIP_1_0):
         """
@@ -316,11 +311,6 @@ class LocateRequestPayload(primitives.Struct):
                     template_attribute
                 )
                 attributes.write(local_buffer, kmip_version=kmip_version)
-            else:
-                raise exceptions.InvalidField(
-                    "The Locate request payload is missing the attributes "
-                    "list."
-                )
 
         self.length = local_buffer.length()
         super(LocateRequestPayload, self).write(
@@ -379,7 +369,7 @@ class LocateRequestPayload(primitives.Struct):
         return '{' + value + '}'
 
 
-class LocateResponsePayload(primitives.Struct):
+class LocateResponsePayload(base.ResponsePayload):
     """
     A response payload for the Locate operation.
 
@@ -402,8 +392,7 @@ class LocateResponsePayload(primitives.Struct):
             unique_identifiers (list): A list of strings specifying the object
                 identifiers for matching objects. Optional, defaults to None.
         """
-        super(LocateResponsePayload, self).__init__(
-            enums.Tags.RESPONSE_PAYLOAD)
+        super(LocateResponsePayload, self).__init__()
 
         self._located_items = None
         self._unique_identifiers = None

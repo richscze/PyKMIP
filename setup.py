@@ -18,16 +18,23 @@ import re
 import setuptools
 
 # Dynamically set __version__
-version_path = os.path.join(os.path.dirname(
-    os.path.realpath(__file__)), 'kmip', 'version.py')
-with open(version_path, 'r') as version_file:
-    mo = re.search(r"^.*= '(\d\.\d\..*)'$", version_file.read(), re.MULTILINE)
-    __version__ = mo.group(1)
+version_path = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)),
+    "kmip",
+    "version.py"
+)
+with open(version_path, 'r') as f:
+    m = re.search(
+        r"^__version__ = \"(\d+\.\d+\..*)\"$",
+        f.read(),
+        re.MULTILINE
+    )
+    __version__ = m.group(1)
 
 setuptools.setup(
     name='PyKMIP',
     version=__version__,
-    description='KMIP v1.1 library',
+    description='KMIP library',
     keywords='KMIP',
     author='Peter Hamilton',
     author_email='peter.hamilton@jhuapl.edu',
@@ -43,7 +50,8 @@ setuptools.setup(
     },
     install_requires=[
         "cryptography",
-        "enum34",
+        "enum-compat",
+        "requests",
         "six",
         "sqlalchemy"
     ],

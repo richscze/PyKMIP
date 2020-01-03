@@ -1261,6 +1261,9 @@ class TestCryptographyEngine(testtools.TestCase):
 # TODO(peter-hamilton): Replace this with actual fixture files from NIST CAPV.
 # Most of these test vectors were obtained from the pyca/cryptography test
 # suite.
+# GCM test vectors were obtained from the NIST CAVP test suite:
+#
+# https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/mac/gcmtestvectors.zip
 @pytest.fixture(
     scope='function',
     params=[
@@ -1330,6 +1333,87 @@ class TestCryptographyEngine(testtools.TestCase):
          'cipher_text': (
              b'\x6a\xcc\x04\x14\x2e\x10\x0a\x65'
              b'\xf5\x1b\x97\xad\xf5\x17\x2c\x41'
+         )},
+        {'algorithm': enums.CryptographicAlgorithm.AES,
+         'cipher_mode': enums.BlockCipherMode.GCM,
+         'key': (
+             b'\xfe\x32\xb0\xc7\x4c\xd7\x45\x8b'
+             b'\x75\xcb\x19\x6f\x48\x6b\x35\xc6'
+             b'\x19\xb7\xc6\xb4\xfe\x3f\x49\x64'
+             b'\xa4\x9a\xd9\x25\x37\x76\x27\xd7'
+         ),
+         'iv_nonce': (
+             b'\x66\x30\xe6\xd4\xb9\xd9\x04\x1f'
+             b'\xe2\xba\xf6\xd1\xd6\x88\x7a\x56'
+             b'\x4e\xfe\xe7\x54\x90\xc2\xdd\x6f'
+             b'\x5d\x3e\x7f\xb4\xc3\xac\x4d\xe9'
+             b'\xfd\xa1\x69\x74\x71\xcc\x14\x80'
+             b'\x3a\x03\x3f\x55\x1d\x2e\x05\x56'
+             b'\x19\xd9\xb6\x84\x83\x08\xb9\xf2'
+             b'\x53\x5b\x0d\x85\x43\x8f\x16\x02'
+             b'\x3c\x1b\x96\x81\xb2\x62\xa5\xf3'
+             b'\xd5\x43\x95\xec\xd9\x56\x3b\x88'
+             b'\x10\x8b\xe8\xad\x4a\x78\xee\x2a'
+             b'\x4d\xec\xe8\x88\xc4\xc3\x4c\xda'
+             b'\xe6\xaf\x21\xd8\xef\xc5\xcf\x71'
+             b'\x9e\xfa\x27\x04\x9b\x4a\x45\xcc'
+             b'\x49\x70\xdb\xba\x37\xef\x57\x15'
+             b'\xa9\x9a\x96\x44\xae\xd0\xd3\x94'
+         ),
+         'plain_text': (
+             b'\x40\x31\x55\x40\x39\x07\x4e\x10'
+             b'\x5d\xb2\x36\xdd\x8b\x7c\x81\xb6'
+             b'\x7e\xc1\xd7\xa4\xed\x0d\xd5\x94'
+             b'\x8e\x85\xa0\x0f\x3f\x6d\x4c\x87'
+             b'\x2d\xc8\x72\xc8\x7b\x47\xc4\x5a'
+             b'\xf1\x81\xf0\x39\x58\xc1\xee\xfe'
+             b'\x60\x62\xff'
+         ),
+         'auth_additional_data': (
+             b'\xd3\xc6\x2d\xa2\x77\x97\xba\x8e\x16'
+             b'\x82\x1a\x1b\xe2\x47\x8a\x6f'
+         ),
+         'auth_tag_length': 16,
+         'cipher_text': (
+             b'\xfb\x10\xfa\x35\x45\x92\x53\xab'
+             b'\x7a\x87\xb3\x27\x32\x63\x56\x05'
+             b'\x56\xb8\x49\xba\x6b\xf1\xf5\xde'
+             b'\x46\xd4\xc8\x59\xf8\xad\xa6\xca'
+             b'\xca\xe4\x53\x9a\x5b\x7e\xaf\x9a'
+             b'\xd1\x16\xd4\x56\xf5\x0d\x2f\x80'
+             b'\xb6\x3d\xd7'
+         ),
+         'auth_tag': (
+             b'\xbd\x9b\x6f\x23\xc9\x39\xa7\xd4'
+             b'\xf5\xbe\xb0\x9d\x92\xf0\x17\x56'
+         )},
+        {'algorithm': enums.CryptographicAlgorithm.AES,
+         'cipher_mode': enums.BlockCipherMode.GCM,
+         'key': (
+             b'\x2c\xd6\xfd\x85\xf1\x30\x28\x38'
+             b'\x63\x53\xff\xa1\x52\x1d\x8d\x7b'
+             b'\xc8\xeb\xed\x26\xb1\x6d\x94\x40'
+             b'\x5f\x03\xf6\xda\x5d\xef\x2d\xa8'
+         ),
+         'iv_nonce': (
+             b'\xba\x7a\x97\x67\x0f\xbb\x02\x62'
+             b'\x24\x36\x92\x9d'
+         ),
+         'plain_text': (
+             b'\x8b\x4f\x7e\x75\x16\x31\xe7\x65'
+             b'\xdc\x13\xfa\x63\xf0\x2f\x63\x4b'
+         ),
+         'auth_additional_data': (
+             b'\x90\xee\x7e\x56\xf9\x59\x34\x76'
+             b'\x1c\x39\xab\x75\x37\x2a\xc2\xc6'
+         ),
+         'auth_tag_length': 8,
+         'cipher_text': (
+             b'\x8c\xdc\x3f\x57\x48\xb1\x59\x36'
+             b'\x6c\x94\xaf\x48\xe2\xcf\xa0\x98'
+         ),
+         'auth_tag': (
+             b'\xfe\xb3\x8e\x85\x4e\xdf\x4d\x79'
          )},
         {'algorithm': enums.CryptographicAlgorithm.BLOWFISH,
          'cipher_mode': enums.BlockCipherMode.OFB,
@@ -1441,7 +1525,9 @@ def test_encrypt_symmetric(symmetric_parameters):
         symmetric_parameters.get('key'),
         symmetric_parameters.get('plain_text'),
         cipher_mode=symmetric_parameters.get('cipher_mode'),
-        iv_nonce=symmetric_parameters.get('iv_nonce')
+        iv_nonce=symmetric_parameters.get('iv_nonce'),
+        auth_additional_data=symmetric_parameters.get('auth_additional_data'),
+        auth_tag_length=symmetric_parameters.get('auth_tag_length')
     )
 
     if engine._handle_symmetric_padding.called:
@@ -1454,6 +1540,7 @@ def test_encrypt_symmetric(symmetric_parameters):
         )
 
     assert symmetric_parameters.get('cipher_text') == result.get('cipher_text')
+    assert symmetric_parameters.get('auth_tag') == result.get('auth_tag')
 
 
 def test_decrypt_symmetric(symmetric_parameters):
@@ -1472,7 +1559,9 @@ def test_decrypt_symmetric(symmetric_parameters):
         symmetric_parameters.get('key'),
         symmetric_parameters.get('cipher_text'),
         cipher_mode=symmetric_parameters.get('cipher_mode'),
-        iv_nonce=symmetric_parameters.get('iv_nonce')
+        iv_nonce=symmetric_parameters.get('iv_nonce'),
+        auth_additional_data=symmetric_parameters.get('auth_additional_data'),
+        auth_tag=symmetric_parameters.get('auth_tag')
     )
 
     if engine._handle_symmetric_padding.called:

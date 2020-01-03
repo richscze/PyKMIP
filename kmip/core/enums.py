@@ -126,6 +126,7 @@ class AttributeType(enum.Enum):
     KEY_VALUE_PRESENT                = 'Key Value Present'
     KEY_VALUE_LOCATION               = 'Key Value Location'
     ORIGINAL_CREATION_DATE           = 'Original Creation Date'
+    SENSITIVE                        = "Sensitive"
 
 
 class AuthenticationSuite(enum.Enum):
@@ -1584,6 +1585,9 @@ class Tags(enum.Enum):
     INTEROP_FUNCTION                         = 0x420160
     INTEROP_IDENTIFIER                       = 0x420161
     ADJUSTMENT_VALUE                         = 0x420162
+    COMMON_PROTECTION_STORAGE_MASKS          = 0x420163
+    PRIVATE_PROTECTION_STORAGE_MASKS         = 0x420164
+    PUBLIC_PROTECTION_STORAGE_MASKS          = 0x420165
 
 
 class TicketType(enum.Enum):

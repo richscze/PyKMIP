@@ -56,7 +56,7 @@ def build_console_logger(level):
     return logger
 
 
-def build_cli_parser(operation=None):
+def build_cli_parser(operation):
     # Build the argument parser and setup expected options
     parser = optparse.OptionParser(
         usage="%prog [options]",
@@ -211,7 +211,68 @@ def build_cli_parser(operation=None):
             default=None,
             dest="uuid",
             help="UID of a managed object")
+    elif operation is Operation.GET_ATTRIBUTES:
+        parser.add_option(
+            "-i",
+            "--uuid",
+            action="store",
+            type="str",
+            default=None,
+            dest="uuid",
+            help="UID of a managed object")
+        parser.add_option(
+            "-a",
+            "--attribute-names",
+            action="append",
+            type="str",
+            default=None,
+            dest="attribute_names",
+            help="List of attribute names to retrieve, defaults to all "
+                 "attributes")
+    elif operation is Operation.MODIFY_ATTRIBUTE:
+        parser.add_option(
+            "-i",
+            "--uuid",
+            action="store",
+            type="str",
+            default=None,
+            dest="uuid",
+            help="UID of a managed object")
+    elif operation is Operation.DELETE_ATTRIBUTE:
+        parser.add_option(
+            "-i",
+            "--uuid",
+            action="store",
+            type="str",
+            default=None,
+            dest="uuid",
+            help="UID of a managed object")
+    elif operation is Operation.SET_ATTRIBUTE:
+        parser.add_option(
+            "-i",
+            "--uuid",
+            action="store",
+            type="str",
+            default=None,
+            dest="uuid",
+            help="UID of a managed object")
     elif operation is Operation.LOCATE:
+        parser.add_option(
+            "--offset-items",
+            action="store",
+            type="int",
+            default=None,
+            dest="offset_items",
+            help="The number of matching secrets to skip."
+        )
+        parser.add_option(
+            "--maximum-items",
+            action="store",
+            type="int",
+            default=None,
+            dest="maximum_items",
+            help="The maximum number of matching secrets to return."
+        )
         parser.add_option(
             "-n",
             "--name",
@@ -220,6 +281,94 @@ def build_cli_parser(operation=None):
             default=None,
             dest="name",
             help="Name of secret to retrieve from the KMIP server")
+        parser.add_option(
+            "--initial-date",
+            action="append",
+            type="str",
+            default=[],
+            dest="initial_dates",
+            help=(
+                "Initial date(s) in UTC of the secret to retrieve from the "
+                "KMIP server. Use once to perform an exact date match. Use "
+                "twice to create a date range that the secret's date should "
+                "be within. The value format should look like this: "
+                "'Tue Jul 23 18:39:01 2019'"
+            )
+        )
+        parser.add_option(
+            "--state",
+            action="store",
+            type="str",
+            default=None,
+            dest="state",
+            help="The state of the secret (e.g., PRE_ACTIVE, ACTIVE)"
+        )
+        parser.add_option(
+            "--object-type",
+            action="store",
+            type="str",
+            default=None,
+            dest="object_type",
+            help=(
+                "The object type of the secret "
+                "(e.g., CERTIFICATE, SYMMETRIC_KEY)"
+            )
+        )
+        parser.add_option(
+            "--certificate-type",
+            action="store",
+            type="str",
+            default=None,
+            dest="certificate_type",
+            help="The certificate type of the secret (e.g., X_509)"
+        )
+        parser.add_option(
+            "--cryptographic-algorithm",
+            action="store",
+            type="str",
+            default=None,
+            dest="cryptographic_algorithm",
+            help="The cryptographic algorithm of the secret (e.g., AES, RSA)"
+        )
+        parser.add_option(
+            "--cryptographic-length",
+            action="store",
+            type="int",
+            default=None,
+            dest="cryptographic_length",
+            help="The cryptographic length of the secret (e.g., 128, 2048)"
+        )
+        parser.add_option(
+            "--cryptographic-usage-mask",
+            action="append",
+            type="str",
+            default=[],
+            dest="cryptographic_usage_masks",
+            help=(
+                "The cryptographic usage mask(s) the secret should have set "
+                "(e.g., ENCRYPT, DECRYPT). Use multiple times to specify "
+                "multiple cryptographic usage mask enumeration values. All "
+                "values will get combined into a single mask when sent to the "
+                "server."
+            )
+        )
+        parser.add_option(
+            "-i",
+            "--unique-identifier",
+            action="store",
+            type="str",
+            default=None,
+            dest="unique_identifier",
+            help="The unique identifier of the secret (e.g., 1, 2, 3)"
+        )
+        parser.add_option(
+            "--operation-policy-name",
+            action="store",
+            type="str",
+            default=None,
+            dest="operation_policy_name",
+            help="The operation policy name of the secret (e.g., default)"
+        )
     elif operation is Operation.REGISTER:
         parser.add_option(
             "-f",
@@ -577,6 +726,8 @@ def log_secret(logger, secret_type, secret_value):
         log_public_key(logger, secret_value)
     elif secret_type is ObjectType.SYMMETRIC_KEY:
         log_symmetric_key(logger, secret_value)
+    elif secret_type is ObjectType.SPLIT_KEY:
+        log_split_key(logger, secret_value)
     else:
         logger.info('generic secret: {0}'.format(secret_value))
 
@@ -607,9 +758,23 @@ def log_symmetric_key(logger, skey):
     log_key_block(logger, key_block)
 
 
+def log_split_key(logger, split_key):
+    logger.info("Split Key:")
+    logger.info("* Split Key Parts: {}".format(split_key.split_key_parts))
+    logger.info(
+        "* Key Part Identifier: {}".format(split_key.key_part_identifier)
+    )
+    logger.info(
+        "* Split Key Threshold: {}".format(split_key.split_key_threshold)
+    )
+    logger.info("* Split Key Method: {}".format(split_key.split_key_method))
+    logger.info("* Prime Field Size: {}".format(split_key.prime_field_size))
+    log_key_block(logger, split_key.key_block)
+
+
 def log_key_block(logger, key_block):
     if key_block is not None:
-        logger.info('key block:')
+        logger.info("* Key Block:")
 
         key_format_type = key_block.key_format_type
         key_compression_type = key_block.key_compression_type
@@ -618,33 +783,25 @@ def log_key_block(logger, key_block):
         cryptographic_length = key_block.cryptographic_length
         key_wrapping_data = key_block.key_wrapping_data
 
-        logger.info('* key format type: {0}'.format(key_format_type))
-        logger.info('* key compression type: {0}'.format(
+        logger.info("  * Key Format Type: {}".format(key_format_type))
+        logger.info("  * Key Compression Type: {}".format(
             key_compression_type))
-        logger.info('* cryptographic algorithm: {0}'.format(
+        logger.info("  * Cryptographic Algorithm: {}".format(
             cryptographic_algorithm))
-        logger.info('* cryptographic length: {0}'.format(
+        logger.info("  * Cryptographic Length: {}".format(
             cryptographic_length))
+        logger.info("  * Key Wrapping Data: {}".format(key_wrapping_data))
 
         log_key_value(logger, key_value)
-        log_key_wrapping_data(logger, key_wrapping_data)
     else:
-        logger.info('key block: {0}'.format(key_block))
+        logger.info("* Key Block: {}".format(key_block))
 
 
 def log_key_value(logger, key_value):
     if key_value is not None:
-        logger.info('key value:')
-
-        key_material = key_value.key_material
-        attributes = key_value.attributes
-
-        logger.info('key material: {0}'.format(repr(key_material)))
-
-        log_attribute_list(logger, attributes)
+        logger.info("  * Key Value:")
+        logger.info(
+            "    * Key Material: {}".format(repr(key_value.key_material))
+        )
     else:
-        logger.info('key value: {0}'.format(key_value))
-
-
-def log_key_wrapping_data(logger, key_wrapping_data):
-    logger.info('key wrapping data: {0}'.format(key_wrapping_data))
+        logger.info("  * Key Value: {}".format(key_value))

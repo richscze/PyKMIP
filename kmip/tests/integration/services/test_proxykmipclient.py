@@ -15,9 +15,11 @@
 
 import six
 import testtools
+import time
 import pytest
 
 from kmip.core import enums
+from kmip.core.factories import attributes as attribute_factory
 
 from kmip.pie import exceptions
 from kmip.pie import factory
@@ -30,9 +32,14 @@ class TestProxyKmipClientIntegration(testtools.TestCase):
     def setUp(self):
         super(TestProxyKmipClientIntegration, self).setUp()
         self.object_factory = factory.ObjectFactory()
+        self.attribute_factory = attribute_factory.AttributeFactory()
 
     def tearDown(self):
         super(TestProxyKmipClientIntegration, self).tearDown()
+
+        uuids = self.client.locate()
+        for uuid in uuids:
+            self.client.destroy(uid=uuid)
 
     def test_symmetric_key_create_get_destroy(self):
         """
@@ -860,3 +867,552 @@ class TestProxyKmipClientIntegration(testtools.TestCase):
         )
         self.client.destroy(public_key_id)
         self.client.destroy(private_key_id)
+
+    def test_certificate_register_locate_destroy(self):
+        """
+        Test that newly registered certificates can be located based on their
+        attributes.
+        """
+        label = "Integration Test - Register-Locate-Destroy Certificate"
+        value = (
+            b'\x30\x82\x03\x12\x30\x82\x01\xFA\xA0\x03\x02\x01\x02\x02\x01\x01'
+            b'\x30\x0D\x06\x09\x2A\x86\x48\x86\xF7\x0D\x01\x01\x05\x05\x00\x30'
+            b'\x3B\x31\x0B\x30\x09\x06\x03\x55\x04\x06\x13\x02\x55\x53\x31\x0D'
+            b'\x30\x0B\x06\x03\x55\x04\x0A\x13\x04\x54\x45\x53\x54\x31\x0E\x30'
+            b'\x0C\x06\x03\x55\x04\x0B\x13\x05\x4F\x41\x53\x49\x53\x31\x0D\x30'
+            b'\x0B\x06\x03\x55\x04\x03\x13\x04\x4B\x4D\x49\x50\x30\x1E\x17\x0D'
+            b'\x31\x30\x31\x31\x30\x31\x32\x33\x35\x39\x35\x39\x5A\x17\x0D\x32'
+            b'\x30\x31\x31\x30\x31\x32\x33\x35\x39\x35\x39\x5A\x30\x3B\x31\x0B'
+            b'\x30\x09\x06\x03\x55\x04\x06\x13\x02\x55\x53\x31\x0D\x30\x0B\x06'
+            b'\x03\x55\x04\x0A\x13\x04\x54\x45\x53\x54\x31\x0E\x30\x0C\x06\x03'
+            b'\x55\x04\x0B\x13\x05\x4F\x41\x53\x49\x53\x31\x0D\x30\x0B\x06\x03'
+            b'\x55\x04\x03\x13\x04\x4B\x4D\x49\x50\x30\x82\x01\x22\x30\x0D\x06'
+            b'\x09\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01\x05\x00\x03\x82\x01\x0F'
+            b'\x00\x30\x82\x01\x0A\x02\x82\x01\x01\x00\xAB\x7F\x16\x1C\x00\x42'
+            b'\x49\x6C\xCD\x6C\x6D\x4D\xAD\xB9\x19\x97\x34\x35\x35\x77\x76\x00'
+            b'\x3A\xCF\x54\xB7\xAF\x1E\x44\x0A\xFB\x80\xB6\x4A\x87\x55\xF8\x00'
+            b'\x2C\xFE\xBA\x6B\x18\x45\x40\xA2\xD6\x60\x86\xD7\x46\x48\x34\x6D'
+            b'\x75\xB8\xD7\x18\x12\xB2\x05\x38\x7C\x0F\x65\x83\xBC\x4D\x7D\xC7'
+            b'\xEC\x11\x4F\x3B\x17\x6B\x79\x57\xC4\x22\xE7\xD0\x3F\xC6\x26\x7F'
+            b'\xA2\xA6\xF8\x9B\x9B\xEE\x9E\x60\xA1\xD7\xC2\xD8\x33\xE5\xA5\xF4'
+            b'\xBB\x0B\x14\x34\xF4\xE7\x95\xA4\x11\x00\xF8\xAA\x21\x49\x00\xDF'
+            b'\x8B\x65\x08\x9F\x98\x13\x5B\x1C\x67\xB7\x01\x67\x5A\xBD\xBC\x7D'
+            b'\x57\x21\xAA\xC9\xD1\x4A\x7F\x08\x1F\xCE\xC8\x0B\x64\xE8\xA0\xEC'
+            b'\xC8\x29\x53\x53\xC7\x95\x32\x8A\xBF\x70\xE1\xB4\x2E\x7B\xB8\xB7'
+            b'\xF4\xE8\xAC\x8C\x81\x0C\xDB\x66\xE3\xD2\x11\x26\xEB\xA8\xDA\x7D'
+            b'\x0C\xA3\x41\x42\xCB\x76\xF9\x1F\x01\x3D\xA8\x09\xE9\xC1\xB7\xAE'
+            b'\x64\xC5\x41\x30\xFB\xC2\x1D\x80\xE9\xC2\xCB\x06\xC5\xC8\xD7\xCC'
+            b'\xE8\x94\x6A\x9A\xC9\x9B\x1C\x28\x15\xC3\x61\x2A\x29\xA8\x2D\x73'
+            b'\xA1\xF9\x93\x74\xFE\x30\xE5\x49\x51\x66\x2A\x6E\xDA\x29\xC6\xFC'
+            b'\x41\x13\x35\xD5\xDC\x74\x26\xB0\xF6\x05\x02\x03\x01\x00\x01\xA3'
+            b'\x21\x30\x1F\x30\x1D\x06\x03\x55\x1D\x0E\x04\x16\x04\x14\x04\xE5'
+            b'\x7B\xD2\xC4\x31\xB2\xE8\x16\xE1\x80\xA1\x98\x23\xFA\xC8\x58\x27'
+            b'\x3F\x6B\x30\x0D\x06\x09\x2A\x86\x48\x86\xF7\x0D\x01\x01\x05\x05'
+            b'\x00\x03\x82\x01\x01\x00\xA8\x76\xAD\xBC\x6C\x8E\x0F\xF0\x17\x21'
+            b'\x6E\x19\x5F\xEA\x76\xBF\xF6\x1A\x56\x7C\x9A\x13\xDC\x50\xD1\x3F'
+            b'\xEC\x12\xA4\x27\x3C\x44\x15\x47\xCF\xAB\xCB\x5D\x61\xD9\x91\xE9'
+            b'\x66\x31\x9D\xF7\x2C\x0D\x41\xBA\x82\x6A\x45\x11\x2F\xF2\x60\x89'
+            b'\xA2\x34\x4F\x4D\x71\xCF\x7C\x92\x1B\x4B\xDF\xAE\xF1\x60\x0D\x1B'
+            b'\xAA\xA1\x53\x36\x05\x7E\x01\x4B\x8B\x49\x6D\x4F\xAE\x9E\x8A\x6C'
+            b'\x1D\xA9\xAE\xB6\xCB\xC9\x60\xCB\xF2\xFA\xE7\x7F\x58\x7E\xC4\xBB'
+            b'\x28\x20\x45\x33\x88\x45\xB8\x8D\xD9\xAE\xEA\x53\xE4\x82\xA3\x6E'
+            b'\x73\x4E\x4F\x5F\x03\xB9\xD0\xDF\xC4\xCA\xFC\x6B\xB3\x4E\xA9\x05'
+            b'\x3E\x52\xBD\x60\x9E\xE0\x1E\x86\xD9\xB0\x9F\xB5\x11\x20\xC1\x98'
+            b'\x34\xA9\x97\xB0\x9C\xE0\x8D\x79\xE8\x13\x11\x76\x2F\x97\x4B\xB1'
+            b'\xC8\xC0\x91\x86\xC4\xD7\x89\x33\xE0\xDB\x38\xE9\x05\x08\x48\x77'
+            b'\xE1\x47\xC7\x8A\xF5\x2F\xAE\x07\x19\x2F\xF1\x66\xD1\x9F\xA9\x4A'
+            b'\x11\xCC\x11\xB2\x7E\xD0\x50\xF7\xA2\x7F\xAE\x13\xB2\x05\xA5\x74'
+            b'\xC4\xEE\x00\xAA\x8B\xD6\x5D\x0D\x70\x57\xC9\x85\xC8\x39\xEF\x33'
+            b'\x6A\x44\x1E\xD5\x3A\x53\xC6\xB6\xB6\x96\xF1\xBD\xEB\x5F\x7E\xA8'
+            b'\x11\xEB\xB2\x5A\x7F\x86')
+        usage_mask = [
+            enums.CryptographicUsageMask.ENCRYPT,
+            enums.CryptographicUsageMask.VERIFY
+        ]
+
+        certificate = objects.Certificate(
+            enums.CertificateType.X_509,
+            value,
+            masks=usage_mask,
+            name=label
+        )
+        a_id = self.client.register(certificate)
+
+        # Test locating the certificate by its "Certificate Type" value.
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CERTIFICATE_TYPE,
+                    enums.CertificateType.X_509
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertEqual(a_id, result[0])
+
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CERTIFICATE_TYPE,
+                    enums.CertificateType.PGP
+                )
+            ]
+        )
+        self.assertEqual(0, len(result))
+
+        # Clean up the certificate
+        self.client.destroy(a_id)
+
+    def test_create_getattributes_locate_destroy(self):
+        """
+        Test that the ProxyKmipClient can create symmetric keys and then
+        locate those keys using their attributes.
+        """
+        start_time = int(time.time())
+        time.sleep(2)
+
+        # Create some symmetric keys
+        a_id = self.client.create(enums.CryptographicAlgorithm.AES, 256)
+
+        time.sleep(2)
+        mid_time = int(time.time())
+        time.sleep(2)
+
+        b_id = self.client.create(enums.CryptographicAlgorithm.IDEA, 128)
+
+        time.sleep(2)
+        end_time = int(time.time())
+
+        self.assertIsInstance(a_id, str)
+        self.assertIsInstance(b_id, str)
+
+        # Get the "Initial Date" attributes for each key
+        result_id, result_attributes = self.client.get_attributes(
+            uid=a_id,
+            attribute_names=["Initial Date"]
+        )
+        self.assertEqual(1, len(result_attributes))
+        self.assertEqual(
+            "Initial Date",
+            result_attributes[0].attribute_name.value
+        )
+        initial_date_a = result_attributes[0].attribute_value.value
+
+        result_id, result_attributes = self.client.get_attributes(
+            uid=b_id,
+            attribute_names=["Initial Date"]
+        )
+        self.assertEqual(1, len(result_attributes))
+        self.assertEqual(
+            "Initial Date",
+            result_attributes[0].attribute_name.value
+        )
+        initial_date_b = result_attributes[0].attribute_value.value
+
+        # Test locating each key by its exact "Initial Date" value
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.INITIAL_DATE,
+                    initial_date_a
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertEqual(a_id, result[0])
+
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.INITIAL_DATE,
+                    initial_date_b
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertEqual(b_id, result[0])
+
+        # Test locating each key by a range around its "Initial Date" value
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.INITIAL_DATE,
+                    start_time
+                ),
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.INITIAL_DATE,
+                    mid_time
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertEqual(a_id, result[0])
+
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.INITIAL_DATE,
+                    mid_time
+                ),
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.INITIAL_DATE,
+                    end_time
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertEqual(b_id, result[0])
+
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.INITIAL_DATE,
+                    start_time
+                ),
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.INITIAL_DATE,
+                    end_time
+                )
+            ]
+        )
+        self.assertEqual(2, len(result))
+        self.assertIn(a_id, result)
+        self.assertIn(b_id, result)
+
+        # Test locating each key by its state.
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.STATE,
+                    enums.State.PRE_ACTIVE
+                )
+            ]
+        )
+        self.assertEqual(2, len(result))
+        self.assertIn(a_id, result)
+        self.assertIn(b_id, result)
+
+        # Test locating each key by its object type.
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.OBJECT_TYPE,
+                    enums.ObjectType.SYMMETRIC_KEY
+                )
+            ]
+        )
+        self.assertEqual(2, len(result))
+        self.assertIn(a_id, result)
+        self.assertIn(b_id, result)
+
+        # Test locating each key by its cryptographic algorithm.
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
+                    enums.CryptographicAlgorithm.AES
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertIn(a_id, result)
+
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
+                    enums.CryptographicAlgorithm.IDEA
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertIn(b_id, result)
+
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
+                    enums.CryptographicAlgorithm.RSA
+                )
+            ]
+        )
+        self.assertEqual(0, len(result))
+
+        # Test locating each key by its cryptographic length.
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
+                    128
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertIn(b_id, result)
+
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
+                    256
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertIn(a_id, result)
+
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
+                    2048
+                )
+            ]
+        )
+        self.assertEqual(0, len(result))
+
+        # Test locating each key by its unique identifier.
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.UNIQUE_IDENTIFIER,
+                    a_id
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertIn(a_id, result)
+
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.UNIQUE_IDENTIFIER,
+                    b_id
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertIn(b_id, result)
+
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.UNIQUE_IDENTIFIER,
+                    "unknown"
+                )
+            ]
+        )
+        self.assertEqual(0, len(result))
+
+        # Test locating each key by its operation policy name.
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.OPERATION_POLICY_NAME,
+                    "default"
+                )
+            ]
+        )
+        self.assertEqual(2, len(result))
+        self.assertIn(a_id, result)
+        self.assertIn(b_id, result)
+
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.OPERATION_POLICY_NAME,
+                    "unknown"
+                )
+            ]
+        )
+        self.assertEqual(0, len(result))
+
+        # Test locating keys using offset and maximum item constraints.
+        result = self.client.locate(offset_items=1)
+
+        self.assertEqual(1, len(result))
+        self.assertIn(a_id, result)
+
+        result = self.client.locate(maximum_items=1)
+
+        self.assertEqual(1, len(result))
+        self.assertIn(b_id, result)
+
+        result = self.client.locate(offset_items=1, maximum_items=1)
+
+        self.assertEqual(1, len(result))
+        self.assertIn(a_id, result)
+
+        # Test locating keys using their cryptographic usage masks
+        mask = [enums.CryptographicUsageMask.ENCRYPT]
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
+                    mask
+                )
+            ]
+        )
+        self.assertEqual(2, len(result))
+        self.assertIn(a_id, result)
+        self.assertIn(b_id, result)
+
+        mask.append(enums.CryptographicUsageMask.DECRYPT)
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
+                    mask
+                )
+            ]
+        )
+        self.assertEqual(2, len(result))
+        self.assertIn(a_id, result)
+        self.assertIn(b_id, result)
+
+        mask.append(enums.CryptographicUsageMask.SIGN)
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
+                    mask
+                )
+            ]
+        )
+        self.assertEqual(0, len(result))
+
+        mask = [enums.CryptographicUsageMask.EXPORT]
+        result = self.client.locate(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
+                    mask
+                )
+            ]
+        )
+        self.assertEqual(0, len(result))
+
+        # Clean up the keys
+        self.client.destroy(a_id)
+        self.client.destroy(b_id)
+
+    def test_split_key_register_get_destroy(self):
+        """
+        Test that the ProxyKmipClient can register, retrieve, and destroy a
+        split key.
+        """
+        key = objects.SplitKey(
+            cryptographic_algorithm=enums.CryptographicAlgorithm.AES,
+            cryptographic_length=128,
+            key_value=(
+                b'\x00\x01\x02\x03\x04\x05\x06\x07'
+                b'\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F'
+            ),
+            name="Test Split Key",
+            cryptographic_usage_masks=[enums.CryptographicUsageMask.EXPORT],
+            key_format_type=enums.KeyFormatType.RAW,
+            key_wrapping_data=None,
+            split_key_parts=3,
+            key_part_identifier=1,
+            split_key_threshold=2,
+            split_key_method=enums.SplitKeyMethod.XOR,
+            prime_field_size=None
+        )
+
+        uid = self.client.register(key)
+        self.assertIsInstance(uid, six.string_types)
+
+        try:
+            result = self.client.get(uid)
+            self.assertIsInstance(result, objects.SplitKey)
+            self.assertEqual(
+                enums.CryptographicAlgorithm.AES,
+                result.cryptographic_algorithm
+            )
+            self.assertEqual(128, result.cryptographic_length)
+            self.assertEqual(
+                (
+                    b'\x00\x01\x02\x03\x04\x05\x06\x07'
+                    b'\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F'
+                ),
+                result.value
+            )
+            self.assertEqual(enums.KeyFormatType.RAW, result.key_format_type)
+            self.assertEqual(3, result.split_key_parts)
+            self.assertEqual(1, result.key_part_identifier)
+            self.assertEqual(2, result.split_key_threshold)
+            self.assertEqual(enums.SplitKeyMethod.XOR, result.split_key_method)
+            self.assertIsNone(result.prime_field_size)
+        finally:
+            self.client.destroy(uid)
+            self.assertRaises(
+                exceptions.KmipOperationFailure, self.client.get, uid)
+            self.assertRaises(
+                exceptions.KmipOperationFailure, self.client.destroy, uid)
+
+    def test_modify_delete_attribute(self):
+        """
+        Test that the ProxyKmipClient can modify and delete an attribute.
+        """
+        key_id = self.client.create(
+            enums.CryptographicAlgorithm.IDEA,
+            128,
+            name="Symmetric Key"
+        )
+
+        self.assertIsInstance(key_id, str)
+
+        # Get the "Name" attribute for the key.
+        result_id, result_attributes = self.client.get_attributes(
+            uid=key_id,
+            attribute_names=["Name"]
+        )
+        self.assertEqual(1, len(result_attributes))
+        self.assertEqual("Name", result_attributes[0].attribute_name.value)
+        self.assertEqual(
+            "Symmetric Key",
+            result_attributes[0].attribute_value.name_value.value
+        )
+
+        # Modify the "Name" attribute for the key.
+        response_id, response_attr = self.client.modify_attribute(
+            unique_identifier=key_id,
+            attribute=self.attribute_factory.create_attribute(
+                enums.AttributeType.NAME,
+                "Modified Name",
+                index=0
+            )
+        )
+        self.assertEqual(key_id, response_id)
+        self.assertEqual("Name", response_attr.attribute_name.value)
+        self.assertEqual(0, response_attr.attribute_index.value)
+        self.assertEqual(
+            "Modified Name",
+            response_attr.attribute_value.name_value.value
+        )
+
+        # Get the "Name" attribute for the key to verify it was modified.
+        result_id, result_attributes = self.client.get_attributes(
+            uid=key_id,
+            attribute_names=["Name"]
+        )
+        self.assertEqual(1, len(result_attributes))
+        self.assertEqual("Name", result_attributes[0].attribute_name.value)
+        self.assertEqual(
+            "Modified Name",
+            result_attributes[0].attribute_value.name_value.value
+        )
+
+        # Delete the "Name" attribute for the key.
+        response_id, response_attr = self.client.delete_attribute(
+            unique_identifier=key_id,
+            attribute_name="Name",
+            attribute_index=0
+        )
+        self.assertEqual(key_id, response_id)
+        self.assertEqual("Name", response_attr.attribute_name.value)
+        self.assertEqual(0, response_attr.attribute_index.value)
+        self.assertEqual(
+            "Modified Name",
+            response_attr.attribute_value.name_value.value
+        )

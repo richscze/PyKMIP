@@ -39,8 +39,6 @@ from kmip.core.messages import messages
 
 from kmip.core.messages import payloads
 
-from kmip.core import misc
-
 from kmip.pie import factory
 from kmip.pie import objects
 from kmip.pie import sqltypes
@@ -109,6 +107,7 @@ class KmipEngine(object):
         self._id_placeholder = None
 
         self._protocol_versions = [
+            contents.ProtocolVersion(2, 0),
             contents.ProtocolVersion(1, 4),
             contents.ProtocolVersion(1, 3),
             contents.ProtocolVersion(1, 2),
@@ -116,15 +115,15 @@ class KmipEngine(object):
             contents.ProtocolVersion(1, 0)
         ]
 
-        self.default_protocol_version = self._protocol_versions[2]
-        self._protocol_version = self._protocol_versions[2]
+        self.default_protocol_version = self._protocol_versions[3]
+        self._protocol_version = self._protocol_versions[3]
 
         self._object_map = {
             enums.ObjectType.CERTIFICATE: objects.X509Certificate,
             enums.ObjectType.SYMMETRIC_KEY: objects.SymmetricKey,
             enums.ObjectType.PUBLIC_KEY: objects.PublicKey,
             enums.ObjectType.PRIVATE_KEY: objects.PrivateKey,
-            enums.ObjectType.SPLIT_KEY: None,
+            enums.ObjectType.SPLIT_KEY: objects.SplitKey,
             enums.ObjectType.TEMPLATE: None,
             enums.ObjectType.SECRET_DATA: objects.SecretData,
             enums.ObjectType.OPAQUE_DATA: objects.OpaqueObject
@@ -214,6 +213,11 @@ class KmipEngine(object):
 
         # Process the protocol version
         self._set_protocol_version(header.protocol_version)
+        self._logger.debug(
+            "Request specified KMIP version: {0}".format(
+                header.protocol_version
+            )
+        )
 
         # Process the maximum response size
         max_response_size = None
@@ -515,6 +519,19 @@ class KmipEngine(object):
                 'opaque_data_type': obj.opaque_type,
                 'opaque_data_value': obj.value
             }
+        elif object_type == enums.ObjectType.SPLIT_KEY:
+            value = {
+                "cryptographic_algorithm": obj.cryptographic_algorithm,
+                "cryptographic_length": obj.cryptographic_length,
+                "key_format_type": obj.key_format_type,
+                "key_value": obj.value,
+                "key_wrapping_data": obj.key_wrapping_data,
+                "split_key_parts": obj.split_key_parts,
+                "key_part_identifier": obj.key_part_identifier,
+                "split_key_threshold": obj.split_key_threshold,
+                "split_key_method": obj.split_key_method,
+                "prime_field_size": obj.prime_field_size
+            }
         else:
             name = object_type.name
             raise exceptions.InvalidField(
@@ -589,9 +606,13 @@ class KmipEngine(object):
         for attribute_name in attr_names:
             object_type = managed_object._object_type
 
+            # TODO (ph) Create the policy once and just pass these calls the
+            #           KMIP version for the current request.
             if not self._attribute_policy.is_attribute_supported(
                     attribute_name
             ):
+                continue
+            if self._attribute_policy.is_attribute_deprecated(attribute_name):
                 continue
 
             if self._attribute_policy.is_attribute_applicable_to_object_type(
@@ -644,7 +665,7 @@ class KmipEngine(object):
                 names.append(name)
             return names
         elif attr_name == 'Object Type':
-            return managed_object._object_type
+            return managed_object.object_type
         elif attr_name == 'Cryptographic Algorithm':
             return managed_object.cryptographic_algorithm
         elif attr_name == 'Cryptographic Length':
@@ -704,20 +725,120 @@ class KmipEngine(object):
         elif attr_name == 'Archive Date':
             return None
         elif attr_name == 'Object Group':
-            return None
+            return [x.object_group for x in managed_object.object_groups]
         elif attr_name == 'Fresh':
             return None
         elif attr_name == 'Link':
             return None
-        elif attr_name == 'Application Specific Information':
-            return None
+        elif attr_name == "Application Specific Information":
+            values = []
+            for info in managed_object.app_specific_info:
+                values.append(
+                    {
+                        "application_namespace": info.application_namespace,
+                        "application_data": info.application_data
+                    }
+                )
+            return values
         elif attr_name == 'Contact Information':
             return None
         elif attr_name == 'Last Change Date':
             return None
+        elif attr_name == "Sensitive":
+            return managed_object.sensitive
         else:
             # Since custom attribute names are possible, just return None
             # for unrecognized attributes. This satisfies the spec.
+            return None
+
+    def _get_attribute_index_from_managed_object(
+        self,
+        managed_object,
+        attribute_name,
+        attribute_value
+    ):
+        """
+        Find the attribute index for the specified attribute value.
+
+        Args:
+            managed_object (pie.ManagedObject): A managed object kept by the
+                server. Usually obtained from _get_object_with_access_controls.
+                Required.
+            attribute_name (string): The name of the attribute to look up.
+                Required.
+            attribute_value (primitive.Base): A primitive object representing
+                the attribute value. If a simple object (e.g., Integer) just
+                do a direct comparison on its value. If a complex object (e.g.,
+                Struct) do a comparison on all of the object fields. Required.
+
+        Returns:
+            int - the attribute index of the attribute value on the managed
+                object, if it exists, 0 for single-valued attributes
+            None - if the attribute value could not be found on the managed
+                object
+        """
+        if attribute_name == "Application Specific Information":
+            a = attribute_value
+            for count, v in enumerate(managed_object.app_specific_info):
+                if ((a.application_namespace == v.application_namespace) and
+                        (a.application_data == v.application_data)):
+                    return count
+            return None
+        elif attribute_name == "Certificate Type":
+            if attribute_value.value == managed_object.certificate_type:
+                return 0
+            return None
+        elif attribute_name == "Cryptographic Algorithm":
+            if attribute_value.value == managed_object.cryptographic_algorithm:
+                return 0
+            return None
+        elif attribute_name == "Cryptographic Length":
+            if attribute_value.value == managed_object.cryptographic_length:
+                return 0
+            return None
+        elif attribute_name == "Cryptographic Usage Mask":
+            v = attribute_value.value
+            combined_mask = 0
+            for mask in managed_object.cryptographic_usage_masks:
+                combined_mask |= mask.value
+            if v == combined_mask:
+                return 0
+            return None
+        elif attribute_name == "Initial Date":
+            if attribute_value.value == managed_object.initial_date:
+                return 0
+            return None
+        elif attribute_name == "Name":
+            for count, v in enumerate(managed_object.names):
+                if attribute_value.name_value.value == v:
+                    return count
+            return None
+        elif attribute_name == "Object Group":
+            for count, v in enumerate(managed_object.object_groups):
+                if attribute_value.value == v.object_group:
+                    return count
+            return None
+        elif attribute_name == "Object Type":
+            if attribute_value.value == managed_object.object_type:
+                return 0
+            return None
+        elif attribute_name == "Operation Policy Name":
+            if attribute_value.value == managed_object.operation_policy_name:
+                return 0
+            return None
+        elif attribute_name == "Sensitive":
+            if attribute_value.value == managed_object.sensitive:
+                return 0
+            return None
+        elif attribute_name == "State":
+            if attribute_value.value == managed_object.state:
+                return 0
+            return None
+        elif attribute_name == "Unique Identifier":
+            if attribute_value.value == str(managed_object.unique_identifier):
+                return 0
+            return None
+        else:
             return None
 
     def _set_attributes_on_managed_object(self, managed_object, attributes):
@@ -760,6 +881,21 @@ class KmipEngine(object):
                         raise exceptions.InvalidField(
                             "Cannot set duplicate name values."
                         )
+            elif attribute_name == "Application Specific Information":
+                for value in attribute_value:
+                    managed_object.app_specific_info.append(
+                        objects.ApplicationSpecificInformation(
+                            application_namespace=value.application_namespace,
+                            application_data=value.application_data
+                        )
+                    )
+            elif attribute_name == "Object Group":
+                for value in attribute_value:
+                    # TODO (peterhamilton) Enforce uniqueness of object groups
+                    # to avoid wasted space.
+                    managed_object.object_groups.append(
+                        objects.ObjectGroup(object_group=value.value)
+                    )
             else:
                 # TODO (peterhamilton) Remove when all attributes are supported
                 raise exceptions.InvalidField(
@@ -781,6 +917,8 @@ class KmipEngine(object):
                         value.append(e)
             elif attribute_name == 'Operation Policy Name':
                 field = 'operation_policy_name'
+            elif attribute_name == "Sensitive":
+                field = "sensitive"
 
             if field:
                 existing_value = getattr(managed_object, field)
@@ -798,6 +936,118 @@ class KmipEngine(object):
                 raise exceptions.InvalidField(
                     "The {0} attribute is unsupported.".format(attribute_name)
                 )
+
+    def _set_attribute_on_managed_object_by_index(
+        self,
+        managed_object,
+        attribute_name,
+        attribute_value,
+        attribute_index
+    ):
+        """
+        Set the attribute value for the specified attribute index.
+
+        Args:
+            managed_object (pie.ManagedObject): A managed object kept by the
+                server. Usually obtained from _get_object_with_access_controls.
+                Required.
+            attribute_name (string): The name of the attribute to modify.
+                Required.
+            attribute_value (primitive.Base): A primitive object representing
+                the new attribute value to set on the managd object. Required.
+            attribute_index (int): The index of the existing attribute to
+                modify. Required.
+        """
+        if attribute_name == "Application Specific Information":
+            a = managed_object.app_specific_info[attribute_index]
+            a.application_namespace = attribute_value.application_namespace
+            a.application_data = attribute_value.application_data
+        elif attribute_name == "Name":
+            name_value = attribute_value.name_value
+            managed_object.names[attribute_index] = name_value.value
+        elif attribute_name == "Object Group":
+            a = managed_object.object_groups[attribute_index]
+            a.object_group = attribute_value.value
+
+    def _delete_attribute_from_managed_object(self, managed_object, attribute):
+        attribute_name, attribute_index, attribute_value = attribute
+        object_type = managed_object._object_type
+        if not self._attribute_policy.is_attribute_applicable_to_object_type(
+            attribute_name,
+            object_type
+        ):
+            raise exceptions.ItemNotFound(
+                "The '{}' attribute is not applicable to '{}' objects.".format(
+                    attribute_name,
+                    ''.join(
+                        [x.capitalize() for x in object_type.name.split('_')]
+                    )
+                )
+            )
+        if not self._attribute_policy.is_attribute_deletable_by_client(
+                attribute_name
+        ):
+            raise exceptions.PermissionDenied(
+                "Cannot delete a required attribute."
+            )
+
+        if self._attribute_policy.is_attribute_multivalued(attribute_name):
+            # Get the specific attribute collection and attribute objects.
+            attribute_list = []
+            if attribute_name == "Name":
+                attribute_list = managed_object.names
+                if attribute_value is not None:
+                    attribute_value = attribute_value.value
+            elif attribute_name == "Application Specific Information":
+                attribute_list = managed_object.app_specific_info
+                if attribute_value is not None:
+                    namespace = attribute_value.application_namespace
+                    attribute_value = objects.ApplicationSpecificInformation(
+                        application_namespace=namespace,
+                        application_data=attribute_value.application_data
+                    )
+            elif attribute_name == "Object Group":
+                attribute_list = managed_object.object_groups
+                if attribute_value is not None:
+                    attribute_value = objects.ObjectGroup(
+                        object_group=attribute_value.value
+                    )
+            else:
+                raise exceptions.InvalidField(
+                    "The '{}' attribute is not supported.".format(
+                        attribute_name
+                    )
+                )
+
+            # Generically handle attribute deletion.
+            if attribute_value:
+                if attribute_list.count(attribute_value):
+                    attribute_list.remove(attribute_value)
+                else:
+                    raise exceptions.ItemNotFound(
+                        "Could not locate the attribute instance with the "
+                        "specified value: {}".format(attribute_value)
+                    )
+            elif attribute_index is not None:
+                if attribute_index < len(attribute_list):
+                    attribute_list.pop(attribute_index)
+                else:
+                    raise exceptions.ItemNotFound(
+                        "Could not locate the attribute instance with the "
+                        "specified index: {}".format(attribute_index)
+                    )
+            else:
+                # If no attribute index is provided, this is not a KMIP
+                # 1.* request. If no attribute value is provided, this
+                # must be a KMIP 2.0 attribute reference request, so
+                # delete all instances of the attribute.
+                attribute_list[:] = []
+        else:
+            # The server does not currently support any single-instance,
+            # client deletable attributes.
+            raise exceptions.InvalidField(
+                "The '{}' attribute is not supported.".format(attribute_name)
+            )
 
     def _is_allowed_by_operation_policy(
             self,
@@ -918,6 +1168,63 @@ class KmipEngine(object):
         else:
             return False
 
+    def _is_valid_date(self, date_type, value, start, end):
+        date_type = date_type.value.lower()
+
+        if start is not None:
+            if end is not None:
+                if value < start:
+                    self._logger.debug(
+                        "Failed match: object's {} ({}) is less than "
+                        "the starting {} ({}).".format(
+                            date_type,
+                            time.asctime(time.gmtime(value)),
+                            date_type,
+                            time.asctime(time.gmtime(start))
+                        )
+                    )
+                    return False
+                elif value > end:
+                    self._logger.debug(
+                        "Failed match: object's {} ({}) is greater than "
+                        "the ending {} ({}).".format(
+                            date_type,
+                            time.asctime(time.gmtime(value)),
+                            date_type,
+                            time.asctime(time.gmtime(end))
+                        )
+                    )
+                    return False
+            else:
+                if start != value:
+                    self._logger.debug(
+                        "Failed match: object's {} ({}) does not match "
+                        "the specified {} ({}).".format(
+                            date_type,
+                            time.asctime(time.gmtime(value)),
+                            date_type,
+                            time.asctime(time.gmtime(start))
+                        )
+                    )
+                    return False
+        return True
+
+    def _track_date_attributes(self, date_type, date_values, value):
+        if date_values.get("start") is None:
+            date_values["start"] = value
+        elif date_values.get("end") is None:
+            if value > date_values.get("start"):
+                date_values["end"] = value
+            else:
+                date_values["end"] = date_values.get("start")
+                date_values["start"] = value
+        else:
+            raise exceptions.InvalidField(
+                "Too many {} attributes provided. "
+                "Include one for an exact match. "
+                "Include two for a ranged match.".format(date_type.value)
+            )
+
     def _get_object_with_access_controls(
             self,
             uid,
@@ -970,10 +1277,13 @@ class KmipEngine(object):
         return managed_objects_allowed
 
     def _process_operation(self, operation, payload):
+        # TODO (peterhamilton) Alphabetize this.
         if operation == enums.Operation.CREATE:
             return self._process_create(payload)
         elif operation == enums.Operation.CREATE_KEY_PAIR:
             return self._process_create_key_pair(payload)
+        elif operation == enums.Operation.DELETE_ATTRIBUTE:
+            return self._process_delete_attribute(payload)
         elif operation == enums.Operation.REGISTER:
             return self._process_register(payload)
         elif operation == enums.Operation.DERIVE_KEY:
@@ -1002,6 +1312,10 @@ class KmipEngine(object):
             return self._process_decrypt(payload)
         elif operation == enums.Operation.SIGNATURE_VERIFY:
             return self._process_signature_verify(payload)
+        elif operation == enums.Operation.SET_ATTRIBUTE:
+            return self._process_set_attribute(payload)
+        elif operation == enums.Operation.MODIFY_ATTRIBUTE:
+            return self._process_modify_attribute(payload)
         elif operation == enums.Operation.MAC:
             return self._process_mac(payload)
         elif operation == enums.Operation.SIGN:
@@ -1270,16 +1584,362 @@ class KmipEngine(object):
         )
 
         response_payload = payloads.CreateKeyPairResponsePayload(
-            private_key_uuid=attributes.PrivateKeyUniqueIdentifier(
-                str(private_key.unique_identifier)
-            ),
-            public_key_uuid=attributes.PublicKeyUniqueIdentifier(
-                str(public_key.unique_identifier)
-            )
+            private_key_unique_identifier=str(private_key.unique_identifier),
+            public_key_unique_identifier=str(public_key.unique_identifier)
         )
 
         self._id_placeholder = str(private_key.unique_identifier)
         return response_payload
+
+    @_kmip_version_supported('1.0')
+    def _process_delete_attribute(self, payload):
+        self._logger.info("Processing operation: DeleteAttribute")
+
+        unique_identifier = self._id_placeholder
+        if payload.unique_identifier:
+            unique_identifier = payload.unique_identifier
+
+        managed_object = self._get_object_with_access_controls(
+            unique_identifier,
+            enums.Operation.DELETE_ATTRIBUTE
+        )
+        deleted_attribute = None
+
+        attribute_name = None
+        attribute_index = None
+        attribute_value = None
+
+        if self._protocol_version >= contents.ProtocolVersion(2, 0):
+            # If the current attribute is defined, use that. Otherwise, use
+            # the attribute reference.
+            if payload.current_attribute:
+                try:
+                    attribute_name = enums.convert_attribute_tag_to_name(
+                        payload.current_attribute.attribute.tag
+                    )
+                    attribute_value = payload.current_attribute.attribute
+                except ValueError as e:
+                    self._logger.exception(e)
+                    raise exceptions.ItemNotFound(
+                        "No attribute with the specified name exists."
+                    )
+            elif payload.attribute_reference:
+                attribute_name = payload.attribute_reference.attribute_name
+            else:
+                raise exceptions.InvalidMessage(
+                    "The DeleteAttribute request must specify the current "
+                    "attribute or an attribute reference."
+                )
+        else:
+            # Build a partial attribute from the attribute name and index.
+            if payload.attribute_name:
+                attribute_name = payload.attribute_name
+            else:
+                raise exceptions.InvalidMessage(
+                    "The DeleteAttribute request must specify the attribute "
+                    "name."
+                )
+            if payload.attribute_index:
+                attribute_index = payload.attribute_index
+            else:
+                attribute_index = 0
+
+            # Grab a copy of the attribute before deleting it.
+            existing_attributes = self._get_attributes_from_managed_object(
+                managed_object,
+                [payload.attribute_name]
+            )
+            if len(existing_attributes) > 0:
+                if not attribute_index:
+                    deleted_attribute = existing_attributes[0]
+                else:
+                    if attribute_index < len(existing_attributes):
+                        deleted_attribute = existing_attributes[
+                            attribute_index
+                        ]
+                    else:
+                        raise exceptions.ItemNotFound(
+                            "Could not locate the attribute instance with the "
+                            "specified index: {}".format(attribute_index)
+                        )
+
+        self._delete_attribute_from_managed_object(
+            managed_object,
+            (attribute_name, attribute_index, attribute_value)
+        )
+        self._data_session.commit()
+
+        response_payload = payloads.DeleteAttributeResponsePayload(
+            unique_identifier=unique_identifier,
+            attribute=deleted_attribute
+        )
+
+        return response_payload
+
+    @_kmip_version_supported('2.0')
+    def _process_set_attribute(self, payload):
+        self._logger.info("Processing operation: SetAttribute")
+
+        unique_identifier = self._id_placeholder
+        if payload.unique_identifier:
+            unique_identifier = payload.unique_identifier
+
+        managed_object = self._get_object_with_access_controls(
+            unique_identifier,
+            enums.Operation.SET_ATTRIBUTE
+        )
+
+        attribute_name = enums.convert_attribute_tag_to_name(
+            payload.new_attribute.attribute.tag
+        )
+        if self._attribute_policy.is_attribute_multivalued(attribute_name):
+            raise exceptions.KmipError(
+                status=enums.ResultStatus.OPERATION_FAILED,
+                reason=enums.ResultReason.MULTI_VALUED_ATTRIBUTE,
+                message=(
+                    "The '{}' attribute is multi-valued. Multi-valued "
+                    "attributes cannot be set with the SetAttribute "
+                    "operation.".format(attribute_name)
+                )
+            )
+        if not self._attribute_policy.is_attribute_modifiable_by_client(
+            attribute_name
+        ):
+            raise exceptions.KmipError(
+                status=enums.ResultStatus.OPERATION_FAILED,
+                reason=enums.ResultReason.READ_ONLY_ATTRIBUTE,
+                message=(
+                    "The '{}' attribute is read-only and cannot be modified "
+                    "by the client.".format(attribute_name)
+                )
+            )
+
+        self._set_attributes_on_managed_object(
+            managed_object,
+            {attribute_name: payload.new_attribute.attribute}
+        )
+        self._data_session.commit()
+
+        return payloads.SetAttributeResponsePayload(
+            unique_identifier=unique_identifier
+        )
+
+    @_kmip_version_supported('1.0')
+    def _process_modify_attribute(self, payload):
+        self._logger.info("Processing operation: ModifyAttribute")
+
+        unique_identifier = self._id_placeholder
+        if payload.unique_identifier:
+            unique_identifier = payload.unique_identifier
+
+        managed_object = self._get_object_with_access_controls(
+            unique_identifier,
+            enums.Operation.MODIFY_ATTRIBUTE
+        )
+
+        if self._protocol_version >= contents.ProtocolVersion(2, 0):
+            current_attribute = payload.current_attribute
+            if current_attribute:
+                current_attribute = current_attribute.attribute
+            new_attribute = payload.new_attribute.attribute
+
+            attribute_name = enums.convert_attribute_tag_to_name(
+                new_attribute.tag
+            )
+
+            if not self._attribute_policy.is_attribute_modifiable_by_client(
+                attribute_name
+            ):
+                raise exceptions.KmipError(
+                    status=enums.ResultStatus.OPERATION_FAILED,
+                    reason=enums.ResultReason.PERMISSION_DENIED,
+                    message=(
+                        "The '{}' attribute is read-only and cannot be "
+                        "modified.".format(attribute_name)
+                    )
+                )
+
+            is_multivalued = self._attribute_policy.is_attribute_multivalued(
+                attribute_name
+            )
+
+            if is_multivalued:
+                if current_attribute is None:
+                    raise exceptions.KmipError(
+                        status=enums.ResultStatus.OPERATION_FAILED,
+                        reason=enums.ResultReason.ATTRIBUTE_INSTANCE_NOT_FOUND,
+                        message=(
+                            "The '{}' attribute is multivalued so the current "
+                            "attribute must be specified.".format(
+                                attribute_name
+                            )
+                        )
+                    )
+                else:
+                    index = self._get_attribute_index_from_managed_object(
+                        managed_object,
+                        attribute_name,
+                        current_attribute
+                    )
+                    if index is None:
+                        raise exceptions.KmipError(
+                            status=enums.ResultStatus.OPERATION_FAILED,
+                            reason=enums.ResultReason.ATTRIBUTE_NOT_FOUND,
+                            message=(
+                                "The specified current attribute could not be "
+                                "found on the managed object."
+                            )
+                        )
+                    else:
+                        self._set_attribute_on_managed_object_by_index(
+                            managed_object,
+                            attribute_name,
+                            new_attribute,
+                            index
+                        )
+                        self._data_session.commit()
+            else:
+                if current_attribute is None:
+                    # Verify the attribute is set.
+                    existing_attr = self._get_attribute_from_managed_object(
+                        managed_object,
+                        attribute_name
+                    )
+                    if existing_attr is None:
+                        raise exceptions.KmipError(
+                            status=enums.ResultStatus.OPERATION_FAILED,
+                            reason=enums.ResultReason.ATTRIBUTE_NOT_FOUND,
+                            message=(
+                                "The '{}' attribute is not set on the managed "
+                                "object. It must be set before it can be "
+                                "modified.".format(attribute_name)
+                            )
+                        )
+                else:
+                    # Verify the attribute matches the current attribute.
+                    index = self._get_attribute_index_from_managed_object(
+                        managed_object,
+                        attribute_name,
+                        current_attribute
+                    )
+                    if index is None:
+                        raise exceptions.KmipError(
+                            status=enums.ResultStatus.OPERATION_FAILED,
+                            reason=enums.ResultReason.ATTRIBUTE_NOT_FOUND,
+                            message=(
+                                "The specified current attribute could not be "
+                                "found on the managed object."
+                            )
+                        )
+
+                # Set the attribute value.
+                self._set_attribute_on_managed_object(
+                    managed_object,
+                    (attribute_name, new_attribute)
+                )
+                self._data_session.commit()
+
+            return payloads.ModifyAttributeResponsePayload(
+                unique_identifier=unique_identifier
+            )
+
+        else:
+            attribute_name = payload.attribute.attribute_name.value
+            attribute_index = payload.attribute.attribute_index
+            if attribute_index:
+                attribute_index = attribute_index.value
+            attribute_value = payload.attribute.attribute_value
+
+            if not self._attribute_policy.is_attribute_modifiable_by_client(
+                attribute_name
+            ):
+                raise exceptions.KmipError(
+                    status=enums.ResultStatus.OPERATION_FAILED,
+                    reason=enums.ResultReason.PERMISSION_DENIED,
+                    message=(
+                        "The '{}' attribute is read-only and cannot be "
+                        "modified.".format(attribute_name)
+                    )
+                )
+
+            is_multivalued = self._attribute_policy.is_attribute_multivalued(
+                attribute_name
+            )
+
+            modified_attribute = None
+
+            if is_multivalued:
+                if attribute_index is None:
+                    attribute_index = 0
+
+                existing_attributes = self._get_attribute_from_managed_object(
+                    managed_object,
+                    attribute_name
+                )
+                if 0 <= attribute_index < len(existing_attributes):
+                    self._set_attribute_on_managed_object_by_index(
+                        managed_object,
+                        attribute_name,
+                        attribute_value,
+                        attribute_index
+                    )
+                    self._data_session.commit()
+                else:
+                    raise exceptions.KmipError(
+                        status=enums.ResultStatus.OPERATION_FAILED,
+                        reason=enums.ResultReason.ITEM_NOT_FOUND,
+                        message=(
+                            "No matching attribute instance could be found "
+                            "for the specified attribute index."
+                        )
+                    )
+
+                existing_attributes = self._get_attributes_from_managed_object(
+                    managed_object,
+                    [attribute_name]
+                )
+                modified_attribute = existing_attributes[attribute_index]
+            else:
+                if attribute_index is not None:
+                    raise exceptions.KmipError(
+                        status=enums.ResultStatus.OPERATION_FAILED,
+                        reason=enums.ResultReason.INVALID_FIELD,
+                        message=(
+                            "The attribute index cannot be specified for a "
+                            "single-valued attribute."
+                        )
+                    )
+                existing_attribute = self._get_attributes_from_managed_object(
+                    managed_object,
+                    [attribute_name]
+                )
+                if len(existing_attribute) == 0:
+                    raise exceptions.KmipError(
+                        status=enums.ResultStatus.OPERATION_FAILED,
+                        reason=enums.ResultReason.INVALID_FIELD,
+                        message=(
+                            "The '{}' attribute is not set on the managed "
+                            "object. It must be set before it can be "
+                            "modified.".format(attribute_name)
+                        )
+                    )
+                else:
+                    self._set_attribute_on_managed_object(
+                        managed_object,
+                        (attribute_name, attribute_value)
+                    )
+                    self._data_session.commit()
+
+                existing_attributes = self._get_attributes_from_managed_object(
+                    managed_object,
+                    [attribute_name]
+                )
+                modified_attribute = existing_attributes[0]
+
+            return payloads.ModifyAttributeResponsePayload(
+                unique_identifier=unique_identifier,
+                attribute=modified_attribute
+            )
 
     @_kmip_version_supported('1.0')
     def _process_register(self, payload):
@@ -1540,28 +2200,263 @@ class KmipEngine(object):
         managed_objects = self._list_objects_with_access_controls(
                                 enums.Operation.LOCATE)
 
+        # TODO (ph) Do a single pass on the provided attributes and preprocess
+        # them as needed (e.g., tracking multiple 'Initial Date' values, etc).
+        # Locate needs to be able to error out if multiple singleton attributes
+        # like 'State' are provided in the same request.
         if payload.attributes:
 
             managed_objects_filtered = []
 
             # Filter the objects based on given attributes.
-            # TODO: Currently will only filter for 'Name'.
-            #       Needs to add other attributes.
             for managed_object in managed_objects:
-                for attribute in payload.attributes:
-                    attribute_name = attribute.attribute_name.value
-                    attribute_value = attribute.attribute_value
-                    attr = self._get_attribute_from_managed_object(
-                            managed_object, attribute_name)
-                    if attribute_name == 'Name':
-                        names = attr
-                        if attribute_value not in names:
+                self._logger.debug(
+                    "Evaluating object: {}".format(
+                        managed_object.unique_identifier
+                    )
+                )
+
+                add_object = True
+                initial_date = {}
+
+                for payload_attribute in payload.attributes:
+                    name = payload_attribute.attribute_name.value
+                    value = payload_attribute.attribute_value
+
+                    # Verify that the attribute is applicable to the current
+                    # object. If not, the object doesn't match, so skip it.
+                    policy = self._attribute_policy
+                    if not policy.is_attribute_applicable_to_object_type(
+                        name,
+                        managed_object.object_type
+                    ):
+                        self._logger.debug(
+                            "Failed match: "
+                            "the specified attribute ({}) is not applicable "
+                            "for the object's object type ({}).".format(
+                                name,
+                                managed_object.object_type.name)
+                        )
+                        add_object = False
+                        break
+
+                    # Fetch the attribute from the object and check if it
+                    # matches. If not, the object doesn't match, so skip it.
+                    attribute = self._get_attribute_from_managed_object(
+                        managed_object,
+                        name
+                    )
+                    if attribute is None:
+                        continue
+                    elif name == "Application Specific Information":
+                        application_namespace = value.application_namespace
+                        application_data = value.application_data
+                        v = {
+                            "application_namespace": application_namespace,
+                            "application_data": application_data
+                        }
+                        if v not in attribute:
+                            self._logger.debug(
+                                "Failed match: "
+                                "the specified application specific "
+                                "information ('{}', '{}') does not match any "
+                                "of the object's associated application "
+                                "specific information attributes.".format(
+                                    v.get("application_namespace"),
+                                    v.get("application_data")
+                                )
+                            )
+                            add_object = False
                             break
-                    # TODO: filtering on other attributes
-                else:
+                    elif name == "Object Group":
+                        if value.value not in attribute:
+                            self._logger.debug(
+                                "Failed match: "
+                                "the specified object group ('{}') does not "
+                                "match any of the object's associated object "
+                                "group attributes.".format(value.value)
+                            )
+                            add_object = False
+                            break
+                    elif name == "Name":
+                        if value not in attribute:
+                            self._logger.debug(
+                                "Failed match: "
+                                "the specified name ({}) does not match "
+                                "any of the object's names ({}).".format(
+                                    value,
+                                    attribute
+                                )
+                            )
+                            add_object = False
+                            break
+                    elif name == enums.AttributeType.STATE.value:
+                        value = value.value
+                        if value != attribute:
+                            self._logger.debug(
+                                "Failed match: "
+                                "the specified state ({}) does not match "
+                                "the object's state ({}).".format(
+                                    value.name,
+                                    attribute.name
+                                )
+                            )
+                            add_object = False
+                            break
+                    elif name == enums.AttributeType.OBJECT_TYPE.value:
+                        value = value.value
+                        if value != attribute:
+                            self._logger.debug(
+                                "Failed match: "
+                                "the specified object type ({}) does not "
+                                "match the object's object type ({}).".format(
+                                    value.name,
+                                    attribute.name
+                                )
+                            )
+                            add_object = False
+                            break
+                    elif name == "Cryptographic Algorithm":
+                        value = value.value
+                        if value != attribute:
+                            self._logger.debug(
+                                "Failed match: "
+                                "the specified cryptographic algorithm ({}) "
+                                "does not match the object's cryptographic "
+                                "algorithm ({}).".format(
+                                    value.name,
+                                    attribute.name
+                                )
+                            )
+                            add_object = False
+                            break
+                    elif name == "Cryptographic Length":
+                        value = value.value
+                        if value != attribute:
+                            self._logger.debug(
+                                "Failed match: "
+                                "the specified cryptographic length ({}) "
+                                "does not match the object's cryptographic "
+                                "length ({}).".format(
+                                    value,
+                                    attribute
+                                )
+                            )
+                            add_object = False
+                            break
+                    elif name == "Unique Identifier":
+                        value = value.value
+                        if value != attribute:
+                            self._logger.debug(
+                                "Failed match: "
+                                "the specified unique identifier ({}) "
+                                "does not match the object's unique "
+                                "identifier ({}).".format(
+                                    value,
+                                    attribute
+                                )
+                            )
+                            add_object = False
+                            break
+                    elif name == "Operation Policy Name":
+                        value = value.value
+                        if value != attribute:
+                            self._logger.debug(
+                                "Failed match: "
+                                "the specified operation policy name ({}) "
+                                "does not match the object's operation policy "
+                                "name ({}).".format(
+                                    value,
+                                    attribute
+                                )
+                            )
+                            add_object = False
+                            break
+                    elif name == "Cryptographic Usage Mask":
+                        value = value.value
+                        mask_values = enums.get_enumerations_from_bit_mask(
+                            enums.CryptographicUsageMask,
+                            value
+                        )
+                        for mask_value in mask_values:
+                            if mask_value not in attribute:
+                                self._logger.debug(
+                                    "Failed match: "
+                                    "the specified cryptographic usage mask "
+                                    "({}) is not set on the object.".format(
+                                        mask_value.name
+                                    )
+                                )
+                                add_object = False
+                                break
+                        if not add_object:
+                            break
+                    elif name == "Certificate Type":
+                        value = value.value
+                        if value != attribute:
+                            self._logger.debug(
+                                "Failed match: "
+                                "the specified certificate type ({}) "
+                                "does not match the object's certificate "
+                                "type ({}).".format(
+                                    value.name,
+                                    attribute.name
+                                )
+                            )
+                            add_object = False
+                            break
+                    elif name == enums.AttributeType.INITIAL_DATE.value:
+                        initial_date["value"] = attribute
+                        self._track_date_attributes(
+                            enums.AttributeType.INITIAL_DATE,
+                            initial_date,
+                            value.value
+                        )
+                    else:
+                        if value != attribute:
+                            add_object = False
+                            break
+
+                if initial_date.get("value"):
+                    add_object &= self._is_valid_date(
+                        enums.AttributeType.INITIAL_DATE,
+                        initial_date.get("value"),
+                        initial_date.get("start"),
+                        initial_date.get("end")
+                    )
+
+                if add_object:
+                    self._logger.debug(
+                        "Locate filter matched object: {}".format(
+                            managed_object.unique_identifier
+                        )
+                    )
                     managed_objects_filtered.append(managed_object)
 
             managed_objects = managed_objects_filtered
+
+        # Sort the matching results by their creation date.
+        managed_objects = sorted(
+            managed_objects,
+            key=lambda x: x.initial_date,
+            reverse=True
+        )
+
+        # Skip the requested offset items and keep the requested maximum items
+        if payload.offset_items is not None:
+            if payload.maximum_items is not None:
+                managed_objects = managed_objects[
+                    payload.offset_items:(
+                        payload.offset_items + payload.maximum_items
+                    )
+                ]
+            else:
+                managed_objects = managed_objects[payload.offset_items:]
+        else:
+            if payload.maximum_items is not None:
+                managed_objects = managed_objects[:payload.maximum_items]
+            else:
+                pass
 
         unique_identifiers = [
             str(x.unique_identifier) for x in managed_objects
@@ -1921,7 +2816,7 @@ class KmipEngine(object):
     def _process_query(self, payload):
         self._logger.info("Processing operation: Query")
 
-        queries = [x.value for x in payload.query_functions]
+        queries = payload.query_functions
 
         operations = list()
         objects = list()
@@ -1932,38 +2827,38 @@ class KmipEngine(object):
 
         if enums.QueryFunction.QUERY_OPERATIONS in queries:
             operations = list([
-                contents.Operation(enums.Operation.CREATE),
-                contents.Operation(enums.Operation.CREATE_KEY_PAIR),
-                contents.Operation(enums.Operation.REGISTER),
-                contents.Operation(enums.Operation.DERIVE_KEY),
-                contents.Operation(enums.Operation.LOCATE),
-                contents.Operation(enums.Operation.GET),
-                contents.Operation(enums.Operation.GET_ATTRIBUTES),
-                contents.Operation(enums.Operation.GET_ATTRIBUTE_LIST),
-                contents.Operation(enums.Operation.ACTIVATE),
-                contents.Operation(enums.Operation.REVOKE),
-                contents.Operation(enums.Operation.DESTROY),
-                contents.Operation(enums.Operation.QUERY)
+                enums.Operation.CREATE,
+                enums.Operation.CREATE_KEY_PAIR,
+                enums.Operation.REGISTER,
+                enums.Operation.DERIVE_KEY,
+                enums.Operation.LOCATE,
+                enums.Operation.GET,
+                enums.Operation.GET_ATTRIBUTES,
+                enums.Operation.GET_ATTRIBUTE_LIST,
+                enums.Operation.ACTIVATE,
+                enums.Operation.REVOKE,
+                enums.Operation.DESTROY,
+                enums.Operation.QUERY
             ])
 
             if self._protocol_version >= contents.ProtocolVersion(1, 1):
                 operations.extend([
-                    contents.Operation(enums.Operation.DISCOVER_VERSIONS)
+                    enums.Operation.DISCOVER_VERSIONS
                 ])
             if self._protocol_version >= contents.ProtocolVersion(1, 2):
                 operations.extend([
-                    contents.Operation(enums.Operation.ENCRYPT),
-                    contents.Operation(enums.Operation.DECRYPT),
-                    contents.Operation(enums.Operation.SIGN),
-                    contents.Operation(enums.Operation.SIGNATURE_VERIFY),
-                    contents.Operation(enums.Operation.MAC)
+                    enums.Operation.ENCRYPT,
+                    enums.Operation.DECRYPT,
+                    enums.Operation.SIGN,
+                    enums.Operation.SIGNATURE_VERIFY,
+                    enums.Operation.MAC
                 ])
 
         if enums.QueryFunction.QUERY_OBJECTS in queries:
             objects = list()
         if enums.QueryFunction.QUERY_SERVER_INFORMATION in queries:
-            vendor_identification = misc.VendorIdentification(
-                "PyKMIP {0} Software Server".format(kmip.__version__)
+            vendor_identification = "PyKMIP {0} Software Server".format(
+                kmip.__version__
             )
             server_information = None
         if enums.QueryFunction.QUERY_APPLICATION_NAMESPACES in queries:
@@ -2055,13 +2950,16 @@ class KmipEngine(object):
             payload.data,
             cipher_mode=cryptographic_parameters.block_cipher_mode,
             padding_method=cryptographic_parameters.padding_method,
-            iv_nonce=payload.iv_counter_nonce
+            iv_nonce=payload.iv_counter_nonce,
+            auth_additional_data=payload.auth_additional_data,
+            auth_tag_length=cryptographic_parameters.tag_length
         )
 
         response_payload = payloads.EncryptResponsePayload(
             unique_identifier,
             result.get('cipher_text'),
-            result.get('iv_nonce')
+            result.get('iv_nonce'),
+            result.get('auth_tag')
         )
         return response_payload
 
@@ -2118,7 +3016,9 @@ class KmipEngine(object):
             payload.data,
             cipher_mode=cryptographic_parameters.block_cipher_mode,
             padding_method=cryptographic_parameters.padding_method,
-            iv_nonce=payload.iv_counter_nonce
+            iv_nonce=payload.iv_counter_nonce,
+            auth_additional_data=payload.auth_additional_data,
+            auth_tag=payload.auth_tag
         )
 
         response_payload = payloads.DecryptResponsePayload(

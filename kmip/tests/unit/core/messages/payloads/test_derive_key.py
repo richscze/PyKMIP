@@ -17,6 +17,7 @@ import testtools
 
 from kmip.core import attributes
 from kmip.core import enums
+from kmip.core import exceptions
 from kmip.core import objects
 from kmip.core import primitives
 from kmip.core import utils
@@ -83,6 +84,50 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
             b'\x42\x00\x0A\x07\x00\x00\x00\x14\x43\x72\x79\x70\x74\x6F\x67\x72'
             b'\x61\x70\x68\x69\x63\x20\x4C\x65\x6E\x67\x74\x68\x00\x00\x00\x00'
             b'\x42\x00\x0B\x02\x00\x00\x00\x04\x00\x00\x00\x80\x00\x00\x00\x00'
+        )
+
+        # Encoding obtained in part from the KMIP 1.1 testing document. The
+        # rest of the encoding is a manual construction, since DeriveKey is
+        # not specifically detailed by the testing document. Manually converted
+        # to the KMIP 2.0 format.
+        #
+        # This encoding matches the following set of values:
+        # Object Type - SymmetricKey
+        # Unique Identifiers
+        #     fb4b5b9c-6188-4c63-8142-fe9c328129fc
+        #     5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3
+        #     1703250b-4d40-4de2-93a0-c494a1d4ae40
+        # Derivation Method - HMAC
+        # Derivation Parameters
+        #     Cryptographic Parameters
+        #         Hashing Algorithm - SHA-256
+        #     Initialization Vector - 0x39487432492834A3
+        #     Derivation Data - 0xFAD98B6ACA6D87DD
+        # Attributes
+        #     Cryptographic Algorithm - AES
+        #     Cryptographic Length - 128
+
+        self.full_encoding_with_attributes = utils.BytearrayStream(
+            b'\x42\x00\x79\x01\x00\x00\x01\x18'
+            b'\x42\x00\x57\x05\x00\x00\x00\x04\x00\x00\x00\x02\x00\x00\x00\x00'
+            b'\x42\x00\x94\x07\x00\x00\x00\x24\x66\x62\x34\x62\x35\x62\x39\x63'
+            b'\x2D\x36\x31\x38\x38\x2D\x34\x63\x36\x33\x2D\x38\x31\x34\x32\x2D'
+            b'\x66\x65\x39\x63\x33\x32\x38\x31\x32\x39\x66\x63\x00\x00\x00\x00'
+            b'\x42\x00\x94\x07\x00\x00\x00\x24\x35\x63\x39\x62\x38\x31\x65\x66'
+            b'\x2D\x34\x65\x65\x35\x2D\x34\x32\x63\x64\x2D\x62\x61\x32\x64\x2D'
+            b'\x63\x30\x30\x32\x66\x64\x64\x30\x63\x37\x62\x33\x00\x00\x00\x00'
+            b'\x42\x00\x94\x07\x00\x00\x00\x24\x31\x37\x30\x33\x32\x35\x30\x62'
+            b'\x2D\x34\x64\x34\x30\x2D\x34\x64\x65\x32\x2D\x39\x33\x61\x30\x2D'
+            b'\x63\x34\x39\x34\x61\x31\x64\x34\x61\x65\x34\x30\x00\x00\x00\x00'
+            b'\x42\x00\x31\x05\x00\x00\x00\x04\x00\x00\x00\x02\x00\x00\x00\x00'
+            b'\x42\x00\x32\x01\x00\x00\x00\x38'
+            b'\x42\x00\x2B\x01\x00\x00\x00\x10'
+            b'\x42\x00\x38\x05\x00\x00\x00\x04\x00\x00\x00\x06\x00\x00\x00\x00'
+            b'\x42\x00\x3A\x08\x00\x00\x00\x08\x39\x48\x74\x32\x49\x28\x34\xA3'
+            b'\x42\x00\x30\x08\x00\x00\x00\x08\xFA\xD9\x8B\x6A\xCA\x6D\x87\xDD'
+            b'\x42\x01\x25\x01\x00\x00\x00\x20'
+            b'\x42\x00\x28\x05\x00\x00\x00\x04\x00\x00\x00\x03\x00\x00\x00\x00'
+            b'\x42\x00\x2A\x02\x00\x00\x00\x04\x00\x00\x00\x80\x00\x00\x00\x00'
         )
 
         # All of the following partial encodings are trimmed versions of the
@@ -152,11 +197,11 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         """
         payload = payloads.DeriveKeyRequestPayload()
 
-        self.assertEqual(None, payload.object_type)
-        self.assertEqual(None, payload.unique_identifiers)
-        self.assertEqual(None, payload.derivation_method)
-        self.assertEqual(None, payload.derivation_parameters)
-        self.assertEqual(None, payload.template_attribute)
+        self.assertIsNone(payload.object_type)
+        self.assertIsNone(payload.unique_identifiers)
+        self.assertIsNone(payload.derivation_method)
+        self.assertIsNone(payload.derivation_parameters)
+        self.assertIsNone(payload.template_attribute)
 
     def test_init_with_args(self):
         """
@@ -165,7 +210,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         """
         payload = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY,
-            unique_identifiers=['00000000-1111-2222-3333-444444444444'],
+            unique_identifiers=["00000000-1111-2222-3333-444444444444"],
             derivation_method=enums.DerivationMethod.HASH,
             derivation_parameters=attributes.DerivationParameters(),
             template_attribute=objects.TemplateAttribute()
@@ -176,7 +221,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
             payload.object_type
         )
         self.assertEqual(
-            ['00000000-1111-2222-3333-444444444444'],
+            ["00000000-1111-2222-3333-444444444444"],
             payload.unique_identifiers
         )
         self.assertEqual(
@@ -198,10 +243,10 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         the object type of a DeriveKey request payload.
         """
         payload = payloads.DeriveKeyRequestPayload()
-        args = (payload, 'object_type', 'invalid')
+        args = (payload, "object_type", "invalid")
         self.assertRaisesRegex(
             TypeError,
-            "object type must be an ObjectType enumeration",
+            "Object type must be an ObjectType enumeration.",
             setattr,
             *args
         )
@@ -212,26 +257,26 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         the unique identifiers of a DeriveKey request payload.
         """
         payload = payloads.DeriveKeyRequestPayload()
-        args = (payload, 'unique_identifiers', 'invalid')
+        args = (payload, "unique_identifiers", "invalid")
         self.assertRaisesRegex(
             TypeError,
-            "unique identifiers must be a list of strings",
+            "Unique identifiers must be a list of strings.",
             setattr,
             *args
         )
 
-        args = (payload, 'unique_identifiers', [0])
+        args = (payload, "unique_identifiers", [0])
         self.assertRaisesRegex(
             TypeError,
-            "unique identifiers must be a list of strings",
+            "Unique identifiers must be a list of strings.",
             setattr,
             *args
         )
 
-        args = (payload, 'unique_identifiers', ['valid', 'valid', 0])
+        args = (payload, "unique_identifiers", ["valid", "valid", 0])
         self.assertRaisesRegex(
             TypeError,
-            "unique identifiers must be a list of strings",
+            "Unique identifiers must be a list of strings.",
             setattr,
             *args
         )
@@ -242,10 +287,10 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         the derivation method of a DeriveKey request payload.
         """
         payload = payloads.DeriveKeyRequestPayload()
-        args = (payload, 'derivation_method', 'invalid')
+        args = (payload, "derivation_method", "invalid")
         self.assertRaisesRegex(
             TypeError,
-            "derivation method must be a DerivationMethod enumeration",
+            "Derivation method must be a DerivationMethod enumeration.",
             setattr,
             *args
         )
@@ -256,10 +301,10 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         the derivation parameters of a DeriveKey request payload.
         """
         payload = payloads.DeriveKeyRequestPayload()
-        args = (payload, 'derivation_parameters', 'invalid')
+        args = (payload, "derivation_parameters", "invalid")
         self.assertRaisesRegex(
             TypeError,
-            "derivation parameters must be a DerivationParameters struct",
+            "Derivation parameters must be a DerivationParameters structure.",
             setattr,
             *args
         )
@@ -270,10 +315,10 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         the template attribute of a DeriveKey request payload.
         """
         payload = payloads.DeriveKeyRequestPayload()
-        args = (payload, 'template_attribute', 'invalid')
+        args = (payload, "template_attribute", "invalid")
         self.assertRaisesRegex(
             TypeError,
-            "template attribute must be a TemplateAttribute struct",
+            "Template attribute must be a TemplateAttribute structure.",
             setattr,
             *args
         )
@@ -284,20 +329,20 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         """
         payload = payloads.DeriveKeyRequestPayload()
 
-        self.assertEqual(None, payload.object_type)
-        self.assertEqual(None, payload.unique_identifiers)
-        self.assertEqual(None, payload.derivation_method)
-        self.assertEqual(None, payload.derivation_parameters)
-        self.assertEqual(None, payload.template_attribute)
+        self.assertIsNone(payload.object_type)
+        self.assertIsNone(payload.unique_identifiers)
+        self.assertIsNone(payload.derivation_method)
+        self.assertIsNone(payload.derivation_parameters)
+        self.assertIsNone(payload.template_attribute)
 
         payload.read(self.full_encoding)
 
         self.assertEqual(enums.ObjectType.SYMMETRIC_KEY, payload.object_type)
         self.assertEqual(
             [
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ],
             payload.unique_identifiers
         )
@@ -320,7 +365,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -330,7 +375,69 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
+                        ),
+                        attribute_value=primitives.Integer(
+                            value=128,
+                            tag=enums.Tags.CRYPTOGRAPHIC_LENGTH
+                        )
+                    )
+                ]
+            ),
+            payload.template_attribute
+        )
+
+    def test_read_kmip_2_0(self):
+        """
+        Test that a DeriveKey request payload can be read from a data stream
+        encoded with the KMIP 2.0 format.
+        """
+        payload = payloads.DeriveKeyRequestPayload()
+
+        payload.read(
+            self.full_encoding_with_attributes,
+            kmip_version=enums.KMIPVersion.KMIP_2_0
+        )
+
+        self.assertEqual(enums.ObjectType.SYMMETRIC_KEY, payload.object_type)
+        self.assertEqual(
+            [
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
+            ],
+            payload.unique_identifiers
+        )
+        self.assertEqual(
+            enums.DerivationMethod.HASH,
+            payload.derivation_method
+        )
+        self.assertEqual(
+            attributes.DerivationParameters(
+                cryptographic_parameters=attributes.CryptographicParameters(
+                    hashing_algorithm=enums.HashingAlgorithm.SHA_256
+                ),
+                initialization_vector=b'\x39\x48\x74\x32\x49\x28\x34\xA3',
+                derivation_data=b'\xFA\xD9\x8B\x6A\xCA\x6D\x87\xDD'
+            ),
+            payload.derivation_parameters
+        )
+        self.assertEqual(
+            objects.TemplateAttribute(
+                attributes=[
+                    objects.Attribute(
+                        attribute_name=objects.Attribute.AttributeName(
+                            "Cryptographic Algorithm"
+                        ),
+                        attribute_value=primitives.Enumeration(
+                            enums.CryptographicAlgorithm,
+                            value=enums.CryptographicAlgorithm.AES,
+                            tag=enums.Tags.CRYPTOGRAPHIC_ALGORITHM
+                        )
+                    ),
+                    objects.Attribute(
+                        attribute_name=objects.Attribute.AttributeName(
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -344,21 +451,16 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
 
     def test_read_missing_object_type(self):
         """
-        Test that a ValueError gets raised when decoding a DeriveKey request
-        payload encoding missing the object type.
+        Test that an InvalidKmipEncoding error gets raised when decoding a
+        DeriveKey request payload encoding missing the object type.
         """
         payload = payloads.DeriveKeyRequestPayload()
 
-        self.assertEqual(None, payload.object_type)
-        self.assertEqual(None, payload.unique_identifiers)
-        self.assertEqual(None, payload.derivation_method)
-        self.assertEqual(None, payload.derivation_parameters)
-        self.assertEqual(None, payload.template_attribute)
-
         args = (self.partial_encoding_no_object_type, )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing object type",
+            exceptions.InvalidKmipEncoding,
+            "The DeriveKey request payload encoding is missing the object "
+            "type.",
             payload.read,
             *args
         )
@@ -370,81 +472,80 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         """
         payload = payloads.DeriveKeyRequestPayload()
 
-        self.assertEqual(None, payload.object_type)
-        self.assertEqual(None, payload.unique_identifiers)
-        self.assertEqual(None, payload.derivation_method)
-        self.assertEqual(None, payload.derivation_parameters)
-        self.assertEqual(None, payload.template_attribute)
-
         args = (self.partial_encoding_no_unique_identifiers, )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing unique identifiers",
+            exceptions.InvalidKmipEncoding,
+            "The DeriveKey request payload encoding is missing the unique "
+            "identifiers",
             payload.read,
             *args
         )
 
     def test_read_missing_derivation_method(self):
         """
-        Test that a ValueError gets raised when decoding a DeriveKey request
-        payload encoding missing the derivation method.
+        Test that an InvalidKmipEncoding error gets raised when decoding a
+        DeriveKey request payload encoding missing the derivation method.
         """
         payload = payloads.DeriveKeyRequestPayload()
 
-        self.assertEqual(None, payload.object_type)
-        self.assertEqual(None, payload.unique_identifiers)
-        self.assertEqual(None, payload.derivation_method)
-        self.assertEqual(None, payload.derivation_parameters)
-        self.assertEqual(None, payload.template_attribute)
-
         args = (self.partial_encoding_no_derivation_method, )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing derivation method",
+            exceptions.InvalidKmipEncoding,
+            "The DeriveKey request payload encoding is missing the derivation "
+            "method.",
             payload.read,
             *args
         )
 
     def test_read_missing_derivation_parameters(self):
         """
-        Test that a ValueError gets raised when decoding a DeriveKey request
-        payload encoding missing the derivation parameters.
+        Test that an InvalidKmipEncoding error gets raised when decoding a
+        DeriveKey request payload encoding missing the derivation parameters.
         """
         payload = payloads.DeriveKeyRequestPayload()
 
-        self.assertEqual(None, payload.object_type)
-        self.assertEqual(None, payload.unique_identifiers)
-        self.assertEqual(None, payload.derivation_method)
-        self.assertEqual(None, payload.derivation_parameters)
-        self.assertEqual(None, payload.template_attribute)
-
         args = (self.partial_encoding_no_derivation_parameters, )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing derivation parameters",
+            exceptions.InvalidKmipEncoding,
+            "The DeriveKey request payload encoding is missing the derivation "
+            "parameters.",
             payload.read,
             *args
         )
 
     def test_read_missing_template_attribute(self):
         """
-        Test that a ValueError gets raised when decoding a DeriveKey request
-        payload encoding missing the template attribute.
+        Test that an InvalidKmipEncoding error gets raised when decoding a
+        DeriveKey request payload encoding missing the template attribute.
         """
         payload = payloads.DeriveKeyRequestPayload()
 
-        self.assertEqual(None, payload.object_type)
-        self.assertEqual(None, payload.unique_identifiers)
-        self.assertEqual(None, payload.derivation_method)
-        self.assertEqual(None, payload.derivation_parameters)
-        self.assertEqual(None, payload.template_attribute)
-
         args = (self.partial_encoding_no_template_attribute, )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing template attribute",
+            exceptions.InvalidKmipEncoding,
+            "The DeriveKey request payload encoding is missing the template "
+            "attribute.",
             payload.read,
             *args
+        )
+
+    def test_read_missing_attributes(self):
+        """
+        Test that an InvalidKmipEncoding error is raised during the decoding
+        of a DeriveKey request payload when the attributes structure is missing
+        from the encoding.
+        """
+        payload = payloads.DeriveKeyRequestPayload()
+
+        args = (self.partial_encoding_no_template_attribute, )
+        kwargs = {"kmip_version": enums.KMIPVersion.KMIP_2_0}
+        self.assertRaisesRegex(
+            exceptions.InvalidKmipEncoding,
+            "The DeriveKey request payload encoding is missing the attributes "
+            "structure.",
+            payload.read,
+            *args,
+            **kwargs
         )
 
     def test_write(self):
@@ -454,9 +555,9 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         payload = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY,
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ],
             derivation_method=enums.DerivationMethod.HASH,
             derivation_parameters=attributes.DerivationParameters(
@@ -470,7 +571,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -480,7 +581,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -496,25 +597,75 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         self.assertEqual(len(self.full_encoding), len(stream))
         self.assertEqual(str(self.full_encoding), str(stream))
 
+    def test_write_kmip_2_0(self):
+        """
+        Test that a DeriveKey request payload can be written to a data stream
+        encoded with the KMIP 2.0 format.
+        """
+        payload = payloads.DeriveKeyRequestPayload(
+            object_type=enums.ObjectType.SYMMETRIC_KEY,
+            unique_identifiers=[
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
+            ],
+            derivation_method=enums.DerivationMethod.HASH,
+            derivation_parameters=attributes.DerivationParameters(
+                cryptographic_parameters=attributes.CryptographicParameters(
+                    hashing_algorithm=enums.HashingAlgorithm.SHA_256
+                ),
+                initialization_vector=b'\x39\x48\x74\x32\x49\x28\x34\xA3',
+                derivation_data=b'\xFA\xD9\x8B\x6A\xCA\x6D\x87\xDD'
+            ),
+            template_attribute=objects.TemplateAttribute(
+                attributes=[
+                    objects.Attribute(
+                        attribute_name=objects.Attribute.AttributeName(
+                            "Cryptographic Algorithm"
+                        ),
+                        attribute_value=primitives.Enumeration(
+                            enums.CryptographicAlgorithm,
+                            value=enums.CryptographicAlgorithm.AES,
+                            tag=enums.Tags.CRYPTOGRAPHIC_ALGORITHM
+                        )
+                    ),
+                    objects.Attribute(
+                        attribute_name=objects.Attribute.AttributeName(
+                            "Cryptographic Length"
+                        ),
+                        attribute_value=primitives.Integer(
+                            value=128,
+                            tag=enums.Tags.CRYPTOGRAPHIC_LENGTH
+                        )
+                    )
+                ]
+            )
+        )
+        stream = utils.BytearrayStream()
+        payload.write(stream, kmip_version=enums.KMIPVersion.KMIP_2_0)
+
+        self.assertEqual(len(self.full_encoding_with_attributes), len(stream))
+        self.assertEqual(str(self.full_encoding_with_attributes), str(stream))
+
     def test_write_missing_object_type(self):
         """
-        Test that a ValueError gets raised when encoding a DeriveKey request
-        payload missing the object type.
+        Test that an InvalidField error gets raised when encoding a DeriveKey
+        request payload missing the object type.
         """
         payload = payloads.DeriveKeyRequestPayload()
 
         args = (utils.BytearrayStream(), )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing object type",
+            exceptions.InvalidField,
+            "The DeriveKey request payload is missing the object type field.",
             payload.write,
             *args
         )
 
     def test_write_missing_unique_identifiers(self):
         """
-        Test that a ValueError gets raised when encoding a DeriveKey request
-        payload missing the unique identifiers.
+        Test that an InvalidField error gets raised when encoding a DeriveKey
+        request payload missing the unique identifiers.
         """
         payload = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY
@@ -522,68 +673,69 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
 
         args = (utils.BytearrayStream(), )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing unique identifiers",
+            exceptions.InvalidField,
+            "The DeriveKey request payload is missing the unique identifiers.",
             payload.write,
             *args
         )
 
     def test_write_missing_derivation_method(self):
         """
-        Test that a ValueError gets raised when encoding a DeriveKey request
-        payload missing the derivation method.
+        Test that an InvalidField error gets raised when encoding a DeriveKey
+        request payload missing the derivation method.
         """
         payload = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY,
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ]
         )
 
         args = (utils.BytearrayStream(), )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing derivation method",
+            exceptions.InvalidField,
+            "The DeriveKey request payload is missing the derivation method.",
             payload.write,
             *args
         )
 
     def test_write_missing_derivation_parameters(self):
         """
-        Test that a ValueError gets raised when encoding a DeriveKey request
-        payload missing the derivation parameters.
+        Test that an InvalidField error gets raised when encoding a DeriveKey
+        request payload missing the derivation parameters.
         """
         payload = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY,
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ],
             derivation_method=enums.DerivationMethod.HASH
         )
 
         args = (utils.BytearrayStream(), )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing derivation parameters",
+            exceptions.InvalidField,
+            "The DeriveKey request payload is missing the derivation "
+            "parameters.",
             payload.write,
             *args
         )
 
     def test_write_missing_template_attribute(self):
         """
-        Test that a ValueError gets raised when encoding a DeriveKey request
-        payload missing the template attribute.
+        Test that an InvalidField error gets raised when encoding a DeriveKey
+        request payload missing the template attribute.
         """
         payload = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY,
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ],
             derivation_method=enums.DerivationMethod.HASH,
             derivation_parameters=attributes.DerivationParameters(
@@ -597,10 +749,43 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
 
         args = (utils.BytearrayStream(), )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing template attribute",
+            exceptions.InvalidField,
+            "The DeriveKey request payload is missing the template attribute.",
             payload.write,
             *args
+        )
+
+    def test_write_missing_attributes(self):
+        """
+        Test that an InvalidField error gets raised when encoding a DeriveKey
+        request payload missing the template attribute.
+        """
+        payload = payloads.DeriveKeyRequestPayload(
+            object_type=enums.ObjectType.SYMMETRIC_KEY,
+            unique_identifiers=[
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
+            ],
+            derivation_method=enums.DerivationMethod.HASH,
+            derivation_parameters=attributes.DerivationParameters(
+                cryptographic_parameters=attributes.CryptographicParameters(
+                    hashing_algorithm=enums.HashingAlgorithm.SHA_256
+                ),
+                initialization_vector=b'\x39\x48\x74\x32\x49\x28\x34\xA3',
+                derivation_data=b'\xFA\xD9\x8B\x6A\xCA\x6D\x87\xDD'
+            )
+        )
+
+        args = (utils.BytearrayStream(), )
+        kwargs = {"kmip_version": enums.KMIPVersion.KMIP_2_0}
+        self.assertRaisesRegex(
+            exceptions.InvalidField,
+            "The DeriveKey request payload is missing the template attribute "
+            "field.",
+            payload.write,
+            *args,
+            **kwargs
         )
 
     def test_equal_on_equal(self):
@@ -617,9 +802,9 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         a = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY,
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ],
             derivation_method=enums.DerivationMethod.HASH,
             derivation_parameters=attributes.DerivationParameters(
@@ -633,7 +818,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -643,7 +828,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -656,9 +841,9 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         b = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY,
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ],
             derivation_method=enums.DerivationMethod.HASH,
             derivation_parameters=attributes.DerivationParameters(
@@ -672,7 +857,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -682,7 +867,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -717,10 +902,10 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         DeriveKey request payloads with different sets of unique identifiers.
         """
         a = payloads.DeriveKeyRequestPayload(
-            unique_identifiers=['fb4b5b9c-6188-4c63-8142-fe9c328129fc']
+            unique_identifiers=["fb4b5b9c-6188-4c63-8142-fe9c328129fc"]
         )
         b = payloads.DeriveKeyRequestPayload(
-            unique_identifiers=['5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3']
+            unique_identifiers=["5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3"]
         )
 
         self.assertFalse(a == b)
@@ -728,16 +913,16 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
 
         a = payloads.DeriveKeyRequestPayload(
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ]
         )
         b = payloads.DeriveKeyRequestPayload(
             unique_identifiers=[
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc'
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc"
             ]
         )
 
@@ -746,9 +931,9 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
 
         a = payloads.DeriveKeyRequestPayload(
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ]
         )
         b = payloads.DeriveKeyRequestPayload(unique_identifiers=[])
@@ -838,7 +1023,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -848,7 +1033,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -863,7 +1048,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -873,7 +1058,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=64,
@@ -892,7 +1077,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -902,7 +1087,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -925,7 +1110,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -935,7 +1120,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -955,7 +1140,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         DeriveKey request payloads with different types.
         """
         a = payloads.DeriveKeyRequestPayload()
-        b = 'invalid'
+        b = "invalid"
 
         self.assertFalse(a == b)
         self.assertFalse(b == a)
@@ -974,9 +1159,9 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         a = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY,
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ],
             derivation_method=enums.DerivationMethod.HASH,
             derivation_parameters=attributes.DerivationParameters(
@@ -990,7 +1175,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1000,7 +1185,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1013,9 +1198,9 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         b = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY,
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ],
             derivation_method=enums.DerivationMethod.HASH,
             derivation_parameters=attributes.DerivationParameters(
@@ -1029,7 +1214,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1039,7 +1224,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1074,10 +1259,10 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         DeriveKey request payloads with different sets of unique identifiers.
         """
         a = payloads.DeriveKeyRequestPayload(
-            unique_identifiers=['fb4b5b9c-6188-4c63-8142-fe9c328129fc']
+            unique_identifiers=["fb4b5b9c-6188-4c63-8142-fe9c328129fc"]
         )
         b = payloads.DeriveKeyRequestPayload(
-            unique_identifiers=['5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3']
+            unique_identifiers=["5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3"]
         )
 
         self.assertTrue(a != b)
@@ -1085,16 +1270,16 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
 
         a = payloads.DeriveKeyRequestPayload(
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ]
         )
         b = payloads.DeriveKeyRequestPayload(
             unique_identifiers=[
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc'
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc"
             ]
         )
 
@@ -1103,9 +1288,9 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
 
         a = payloads.DeriveKeyRequestPayload(
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ]
         )
         b = payloads.DeriveKeyRequestPayload(unique_identifiers=[])
@@ -1195,7 +1380,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1205,7 +1390,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1220,7 +1405,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1230,7 +1415,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=64,
@@ -1249,7 +1434,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1259,7 +1444,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1282,7 +1467,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1292,7 +1477,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1312,7 +1497,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         DeriveKey request payloads with different types.
         """
         a = payloads.DeriveKeyRequestPayload()
-        b = 'invalid'
+        b = "invalid"
 
         self.assertTrue(a != b)
         self.assertTrue(b != a)
@@ -1332,7 +1517,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
             attributes=[
                 objects.Attribute(
                     attribute_name=objects.Attribute.AttributeName(
-                        'Cryptographic Algorithm'
+                        "Cryptographic Algorithm"
                     ),
                     attribute_value=primitives.Enumeration(
                         enums.CryptographicAlgorithm,
@@ -1342,7 +1527,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 ),
                 objects.Attribute(
                     attribute_name=objects.Attribute.AttributeName(
-                        'Cryptographic Length'
+                        "Cryptographic Length"
                     ),
                     attribute_value=primitives.Integer(
                         value=128,
@@ -1354,9 +1539,9 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         payload = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY,
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ],
             derivation_method=enums.DerivationMethod.HASH,
             derivation_parameters=derivation_parameters,
@@ -1398,7 +1583,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
             attributes=[
                 objects.Attribute(
                     attribute_name=objects.Attribute.AttributeName(
-                        'Cryptographic Algorithm'
+                        "Cryptographic Algorithm"
                     ),
                     attribute_value=primitives.Enumeration(
                         enums.CryptographicAlgorithm,
@@ -1408,7 +1593,7 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
                 ),
                 objects.Attribute(
                     attribute_name=objects.Attribute.AttributeName(
-                        'Cryptographic Length'
+                        "Cryptographic Length"
                     ),
                     attribute_value=primitives.Integer(
                         value=128,
@@ -1420,9 +1605,9 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         payload = payloads.DeriveKeyRequestPayload(
             object_type=enums.ObjectType.SYMMETRIC_KEY,
             unique_identifiers=[
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ],
             derivation_method=enums.DerivationMethod.HASH,
             derivation_parameters=derivation_parameters,
@@ -1432,15 +1617,15 @@ class TestDeriveKeyRequestPayload(testtools.TestCase):
         # TODO(peter-hamilton) Update this test string when TemplateAttribute
         # supports str.
         expected = str({
-            'object_type': enums.ObjectType.SYMMETRIC_KEY,
-            'unique_identifiers': [
-                'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-                '5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3',
-                '1703250b-4d40-4de2-93a0-c494a1d4ae40'
+            "object_type": enums.ObjectType.SYMMETRIC_KEY,
+            "unique_identifiers": [
+                "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+                "5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3",
+                "1703250b-4d40-4de2-93a0-c494a1d4ae40"
             ],
-            'derivation_method': enums.DerivationMethod.HASH,
-            'derivation_parameters': derivation_parameters,
-            'template_attribute': template_attribute
+            "derivation_method": enums.DerivationMethod.HASH,
+            "derivation_parameters": derivation_parameters,
+            "template_attribute": template_attribute
         })
         observed = str(payload)
 
@@ -1508,8 +1693,8 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         """
         payload = payloads.DeriveKeyResponsePayload()
 
-        self.assertEqual(None, payload.unique_identifier)
-        self.assertEqual(None, payload.template_attribute)
+        self.assertIsNone(payload.unique_identifier)
+        self.assertIsNone(payload.template_attribute)
 
     def test_init_with_args(self):
         """
@@ -1517,12 +1702,12 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         values
         """
         payload = payloads.DeriveKeyResponsePayload(
-            unique_identifier='00000000-1111-2222-3333-444444444444',
+            unique_identifier="00000000-1111-2222-3333-444444444444",
             template_attribute=objects.TemplateAttribute()
         )
 
         self.assertEqual(
-            '00000000-1111-2222-3333-444444444444',
+            "00000000-1111-2222-3333-444444444444",
             payload.unique_identifier
         )
         self.assertEqual(
@@ -1536,10 +1721,10 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         the unique identifier of a DeriveKey request payload.
         """
         payload = payloads.DeriveKeyResponsePayload()
-        args = (payload, 'unique_identifier', 0)
+        args = (payload, "unique_identifier", 0)
         self.assertRaisesRegex(
             TypeError,
-            "unique identifier must be a string",
+            "Unique identifier must be a string.",
             setattr,
             *args
         )
@@ -1550,10 +1735,10 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         the template attribute of a DeriveKey response payload.
         """
         payload = payloads.DeriveKeyResponsePayload()
-        args = (payload, 'template_attribute', 'invalid')
+        args = (payload, "template_attribute", "invalid")
         self.assertRaisesRegex(
             TypeError,
-            "template attribute must be a TemplateAttribute struct",
+            "Template attribute must be a TemplateAttribute structure.",
             setattr,
             *args
         )
@@ -1564,13 +1749,13 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         """
         payload = payloads.DeriveKeyResponsePayload()
 
-        self.assertEqual(None, payload.unique_identifier)
-        self.assertEqual(None, payload.template_attribute)
+        self.assertIsNone(payload.unique_identifier)
+        self.assertIsNone(payload.template_attribute)
 
         payload.read(self.full_encoding)
 
         self.assertEqual(
-            'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
+            "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
             payload.unique_identifier
         )
         self.assertEqual(
@@ -1578,7 +1763,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1588,7 +1773,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1600,20 +1785,39 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
             payload.template_attribute
         )
 
-    def test_read_missing_unique_identifier(self):
+    def test_read_kmip_2_0(self):
         """
-        Test that a ValueError gets raised when decoding a DeriveKey response
-        payload encoding missing the unique identifier.
+        Test that a DeriveKey response payload can be read from a data stream
+        encoded with the KMIP 2.0 format.
         """
         payload = payloads.DeriveKeyResponsePayload()
 
-        self.assertEqual(None, payload.unique_identifier)
-        self.assertEqual(None, payload.template_attribute)
+        self.assertIsNone(payload.unique_identifier)
+        self.assertIsNone(payload.template_attribute)
+
+        payload.read(
+            self.partial_encoding_no_template_attribute,
+            kmip_version=enums.KMIPVersion.KMIP_2_0
+        )
+
+        self.assertEqual(
+            "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+            payload.unique_identifier
+        )
+        self.assertIsNone(payload.template_attribute)
+
+    def test_read_missing_unique_identifier(self):
+        """
+        Test that an InvalidKmipEncoding error gets raised when decoding a
+        DeriveKey response payload encoding missing the unique identifier.
+        """
+        payload = payloads.DeriveKeyResponsePayload()
 
         args = (self.partial_encoding_no_unique_identifier, )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing unique identifier",
+            exceptions.InvalidKmipEncoding,
+            "The DeriveKey response payload encoding is missing the unique "
+            "identifier.",
             payload.read,
             *args
         )
@@ -1626,13 +1830,10 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         """
         payload = payloads.DeriveKeyResponsePayload()
 
-        self.assertEqual(None, payload.unique_identifier)
-        self.assertEqual(None, payload.template_attribute)
-
         payload.read(self.partial_encoding_no_template_attribute)
 
         self.assertEqual(
-            'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
+            "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
             payload.unique_identifier
         )
         self.assertEqual(None, payload.template_attribute)
@@ -1642,12 +1843,12 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         Test that a DeriveKey response payload can be written to a data stream.
         """
         payload = payloads.DeriveKeyResponsePayload(
-            unique_identifier='fb4b5b9c-6188-4c63-8142-fe9c328129fc',
+            unique_identifier="fb4b5b9c-6188-4c63-8142-fe9c328129fc",
             template_attribute=objects.TemplateAttribute(
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1657,7 +1858,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1673,17 +1874,61 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         self.assertEqual(len(self.full_encoding), len(stream))
         self.assertEqual(str(self.full_encoding), str(stream))
 
+    def test_write_kmip_2_0(self):
+        """
+        Test that a DeriveKey response payload can be written to a data stream
+        encoded with the KMIP 2.0 format.
+        """
+        payload = payloads.DeriveKeyResponsePayload(
+            unique_identifier="fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+            template_attribute=objects.TemplateAttribute(
+                attributes=[
+                    objects.Attribute(
+                        attribute_name=objects.Attribute.AttributeName(
+                            "Cryptographic Algorithm"
+                        ),
+                        attribute_value=primitives.Enumeration(
+                            enums.CryptographicAlgorithm,
+                            value=enums.CryptographicAlgorithm.AES,
+                            tag=enums.Tags.CRYPTOGRAPHIC_ALGORITHM
+                        )
+                    ),
+                    objects.Attribute(
+                        attribute_name=objects.Attribute.AttributeName(
+                            "Cryptographic Length"
+                        ),
+                        attribute_value=primitives.Integer(
+                            value=128,
+                            tag=enums.Tags.CRYPTOGRAPHIC_LENGTH
+                        )
+                    )
+                ]
+            )
+        )
+        stream = utils.BytearrayStream()
+        payload.write(stream, kmip_version=enums.KMIPVersion.KMIP_2_0)
+
+        self.assertEqual(
+            len(self.partial_encoding_no_template_attribute),
+            len(stream)
+        )
+        self.assertEqual(
+            str(self.partial_encoding_no_template_attribute),
+            str(stream)
+        )
+
     def test_write_missing_unique_identifier(self):
         """
-        Test that a ValueError gets raised when encoding a DeriveKey response
-        payload missing the unique identifier.
+        Test that an InvalidField error gets raised when encoding a DeriveKey
+        response payload missing the unique identifier.
         """
         payload = payloads.DeriveKeyResponsePayload()
 
         args = (utils.BytearrayStream(), )
         self.assertRaisesRegex(
-            ValueError,
-            "invalid payload missing unique identifier",
+            exceptions.InvalidField,
+            "The DeriveKey response payload is missing the unique identifier "
+            "field.",
             payload.write,
             *args
         )
@@ -1694,7 +1939,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         payload missing the template attribute.
         """
         payload = payloads.DeriveKeyResponsePayload(
-            unique_identifier='fb4b5b9c-6188-4c63-8142-fe9c328129fc'
+            unique_identifier="fb4b5b9c-6188-4c63-8142-fe9c328129fc"
         )
         stream = utils.BytearrayStream()
 
@@ -1721,12 +1966,12 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         self.assertTrue(b == a)
 
         a = payloads.DeriveKeyResponsePayload(
-            unique_identifier='fb4b5b9c-6188-4c63-8142-fe9c328129fc',
+            unique_identifier="fb4b5b9c-6188-4c63-8142-fe9c328129fc",
             template_attribute=objects.TemplateAttribute(
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1736,7 +1981,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1747,12 +1992,12 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
             )
         )
         b = payloads.DeriveKeyResponsePayload(
-            unique_identifier='fb4b5b9c-6188-4c63-8142-fe9c328129fc',
+            unique_identifier="fb4b5b9c-6188-4c63-8142-fe9c328129fc",
             template_attribute=objects.TemplateAttribute(
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1762,7 +2007,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1782,17 +2027,17 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         DeriveKey response payloads with different unique identifiers.
         """
         a = payloads.DeriveKeyResponsePayload(
-            unique_identifier='fb4b5b9c-6188-4c63-8142-fe9c328129fc'
+            unique_identifier="fb4b5b9c-6188-4c63-8142-fe9c328129fc"
         )
         b = payloads.DeriveKeyResponsePayload(
-            unique_identifier='5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3'
+            unique_identifier="5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3"
         )
 
         self.assertFalse(a == b)
         self.assertFalse(b == a)
 
         a = payloads.DeriveKeyResponsePayload(
-            unique_identifier='1703250b-4d40-4de2-93a0-c494a1d4ae40'
+            unique_identifier="1703250b-4d40-4de2-93a0-c494a1d4ae40"
         )
         b = payloads.DeriveKeyResponsePayload(unique_identifier=None)
 
@@ -1809,7 +2054,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1819,7 +2064,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1834,7 +2079,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1844,7 +2089,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=64,
@@ -1863,7 +2108,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1873,7 +2118,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1896,7 +2141,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1906,7 +2151,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1926,7 +2171,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         DeriveKey response payloads with different types.
         """
         a = payloads.DeriveKeyResponsePayload()
-        b = 'invalid'
+        b = "invalid"
 
         self.assertFalse(a == b)
         self.assertFalse(b == a)
@@ -1943,12 +2188,12 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         self.assertFalse(b != a)
 
         a = payloads.DeriveKeyResponsePayload(
-            unique_identifier='fb4b5b9c-6188-4c63-8142-fe9c328129fc',
+            unique_identifier="fb4b5b9c-6188-4c63-8142-fe9c328129fc",
             template_attribute=objects.TemplateAttribute(
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1958,7 +2203,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1969,12 +2214,12 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
             )
         )
         b = payloads.DeriveKeyResponsePayload(
-            unique_identifier='fb4b5b9c-6188-4c63-8142-fe9c328129fc',
+            unique_identifier="fb4b5b9c-6188-4c63-8142-fe9c328129fc",
             template_attribute=objects.TemplateAttribute(
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -1984,7 +2229,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -1995,9 +2240,6 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
             )
         )
 
-#        x = a.template_attribute
-#        y = b.template_attribute
-#        raise ValueError(x, y, x == y, x != y)
         self.assertFalse(a != b)
         self.assertFalse(b != a)
 
@@ -2007,17 +2249,17 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         DeriveKey response payloads with different unique identifiers.
         """
         a = payloads.DeriveKeyResponsePayload(
-            unique_identifier='fb4b5b9c-6188-4c63-8142-fe9c328129fc'
+            unique_identifier="fb4b5b9c-6188-4c63-8142-fe9c328129fc"
         )
         b = payloads.DeriveKeyResponsePayload(
-            unique_identifier='5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3'
+            unique_identifier="5c9b81ef-4ee5-42cd-ba2d-c002fdd0c7b3"
         )
 
         self.assertTrue(a != b)
         self.assertTrue(b != a)
 
         a = payloads.DeriveKeyResponsePayload(
-            unique_identifier='1703250b-4d40-4de2-93a0-c494a1d4ae40'
+            unique_identifier="1703250b-4d40-4de2-93a0-c494a1d4ae40"
         )
         b = payloads.DeriveKeyResponsePayload(unique_identifier=None)
 
@@ -2034,7 +2276,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -2044,7 +2286,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -2059,7 +2301,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -2069,7 +2311,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=64,
@@ -2088,7 +2330,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -2098,7 +2340,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -2121,7 +2363,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                 attributes=[
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Algorithm'
+                            "Cryptographic Algorithm"
                         ),
                         attribute_value=primitives.Enumeration(
                             enums.CryptographicAlgorithm,
@@ -2131,7 +2373,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                     ),
                     objects.Attribute(
                         attribute_name=objects.Attribute.AttributeName(
-                            'Cryptographic Length'
+                            "Cryptographic Length"
                         ),
                         attribute_value=primitives.Integer(
                             value=128,
@@ -2151,7 +2393,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
         DeriveKey response payloads with different types.
         """
         a = payloads.DeriveKeyResponsePayload()
-        b = 'invalid'
+        b = "invalid"
 
         self.assertTrue(a != b)
         self.assertTrue(b != a)
@@ -2164,7 +2406,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
             attributes=[
                 objects.Attribute(
                     attribute_name=objects.Attribute.AttributeName(
-                        'Cryptographic Algorithm'
+                        "Cryptographic Algorithm"
                     ),
                     attribute_value=primitives.Enumeration(
                         enums.CryptographicAlgorithm,
@@ -2174,7 +2416,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                 ),
                 objects.Attribute(
                     attribute_name=objects.Attribute.AttributeName(
-                        'Cryptographic Length'
+                        "Cryptographic Length"
                     ),
                     attribute_value=primitives.Integer(
                         value=128,
@@ -2184,7 +2426,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
             ]
         )
         payload = payloads.DeriveKeyResponsePayload(
-            unique_identifier='fb4b5b9c-6188-4c63-8142-fe9c328129fc',
+            unique_identifier="fb4b5b9c-6188-4c63-8142-fe9c328129fc",
             template_attribute=template_attribute
         )
 
@@ -2209,7 +2451,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
             attributes=[
                 objects.Attribute(
                     attribute_name=objects.Attribute.AttributeName(
-                        'Cryptographic Algorithm'
+                        "Cryptographic Algorithm"
                     ),
                     attribute_value=primitives.Enumeration(
                         enums.CryptographicAlgorithm,
@@ -2219,7 +2461,7 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
                 ),
                 objects.Attribute(
                     attribute_name=objects.Attribute.AttributeName(
-                        'Cryptographic Length'
+                        "Cryptographic Length"
                     ),
                     attribute_value=primitives.Integer(
                         value=128,
@@ -2229,15 +2471,15 @@ class TestDeriveKeyResponsePayload(testtools.TestCase):
             ]
         )
         payload = payloads.DeriveKeyResponsePayload(
-            unique_identifier='fb4b5b9c-6188-4c63-8142-fe9c328129fc',
+            unique_identifier="fb4b5b9c-6188-4c63-8142-fe9c328129fc",
             template_attribute=template_attribute
         )
 
         # TODO(peter-hamilton) Update this test string when TemplateAttribute
         # supports str.
         expected = str({
-            'unique_identifier': 'fb4b5b9c-6188-4c63-8142-fe9c328129fc',
-            'template_attribute': template_attribute
+            "unique_identifier": "fb4b5b9c-6188-4c63-8142-fe9c328129fc",
+            "template_attribute": template_attribute
         })
         observed = str(payload)
 

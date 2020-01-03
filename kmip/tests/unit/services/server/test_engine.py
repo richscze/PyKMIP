@@ -702,8 +702,11 @@ class TestKmipEngine(testtools.TestCase):
         e = engine.KmipEngine()
         e._logger = mock.MagicMock()
 
+        # TODO (peterhamilton) Alphatize these.
         e._process_create = mock.MagicMock()
         e._process_create_key_pair = mock.MagicMock()
+        e._process_delete_attribute = mock.MagicMock()
+        e._process_derive_key = mock.MagicMock()
         e._process_register = mock.MagicMock()
         e._process_locate = mock.MagicMock()
         e._process_get = mock.MagicMock()
@@ -719,9 +722,13 @@ class TestKmipEngine(testtools.TestCase):
         e._process_signature_verify = mock.MagicMock()
         e._process_mac = mock.MagicMock()
         e._process_sign = mock.MagicMock()
+        e._process_set_attribute = mock.MagicMock()
+        e._process_modify_attribute = mock.MagicMock()
 
         e._process_operation(enums.Operation.CREATE, None)
         e._process_operation(enums.Operation.CREATE_KEY_PAIR, None)
+        e._process_operation(enums.Operation.DELETE_ATTRIBUTE, None)
+        e._process_operation(enums.Operation.DERIVE_KEY, None)
         e._process_operation(enums.Operation.REGISTER, None)
         e._process_operation(enums.Operation.LOCATE, None)
         e._process_operation(enums.Operation.GET, None)
@@ -737,9 +744,13 @@ class TestKmipEngine(testtools.TestCase):
         e._process_operation(enums.Operation.SIGN, None)
         e._process_operation(enums.Operation.SIGNATURE_VERIFY, None)
         e._process_operation(enums.Operation.MAC, None)
+        e._process_operation(enums.Operation.SET_ATTRIBUTE, None)
+        e._process_operation(enums.Operation.MODIFY_ATTRIBUTE, None)
 
         e._process_create.assert_called_with(None)
         e._process_create_key_pair.assert_called_with(None)
+        e._process_delete_attribute.assert_called_with(None)
+        e._process_derive_key.assert_called_with(None)
         e._process_register.assert_called_with(None)
         e._process_locate.assert_called_with(None)
         e._process_get.assert_called_with(None)
@@ -754,6 +765,8 @@ class TestKmipEngine(testtools.TestCase):
         e._process_decrypt.assert_called_with(None)
         e._process_signature_verify.assert_called_with(None)
         e._process_mac.assert_called_with(None)
+        e._process_set_attribute.assert_called_with(None)
+        e._process_modify_attribute.assert_called_with(None)
 
     def test_unsupported_operation(self):
         """
@@ -1038,10 +1051,10 @@ class TestKmipEngine(testtools.TestCase):
 
         class DummyObject:
             def __init__(self):
-                self._object_type = enums.ObjectType.SPLIT_KEY
+                self._object_type = enums.ObjectType.TEMPLATE
 
         args = (DummyObject(), )
-        regex = "The SplitKey object type is not supported."
+        regex = "The Template object type is not supported."
         six.assertRaisesRegex(
             self,
             exceptions.InvalidField,
@@ -1584,7 +1597,7 @@ class TestKmipEngine(testtools.TestCase):
             symmetric_key,
             'Object Group'
         )
-        self.assertEqual(None, result)
+        self.assertEqual([], result)
 
         result = e._get_attribute_from_managed_object(
             symmetric_key,
@@ -1602,7 +1615,7 @@ class TestKmipEngine(testtools.TestCase):
             symmetric_key,
             'Application Specific Information'
         )
-        self.assertEqual(None, result)
+        self.assertEqual([], result)
 
         result = e._get_attribute_from_managed_object(
             symmetric_key,
@@ -1621,6 +1634,344 @@ class TestKmipEngine(testtools.TestCase):
             'invalid'
         )
         self.assertEqual(None, result)
+
+    def test_get_attribute_index_from_managed_object(self):
+        """
+        Test that an attribute's index can be retrieved from a given managed
+        object.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._logger = mock.MagicMock()
+
+        symmetric_key = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b'',
+            masks=[enums.CryptographicUsageMask.ENCRYPT,
+                   enums.CryptographicUsageMask.DECRYPT]
+        )
+        certificate = pie_objects.X509Certificate(
+            b''
+        )
+
+        e._data_session.add(symmetric_key)
+        e._data_session.add(certificate)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._set_attribute_on_managed_object(
+            symmetric_key,
+            (
+                "Application Specific Information",
+                [
+                    attributes.ApplicationSpecificInformation(
+                        application_namespace="Example Namespace",
+                        application_data="Example Data"
+                    )
+                ]
+            )
+        )
+        e._set_attribute_on_managed_object(
+            symmetric_key,
+            (
+                "Name",
+                [
+                    attributes.Name(
+                        name_value=attributes.Name.NameValue("Name 1")
+                    ),
+                    attributes.Name(
+                        name_value=attributes.Name.NameValue("Name 2")
+                    )
+                ]
+            )
+        )
+        e._set_attribute_on_managed_object(
+            symmetric_key,
+            (
+                "Object Group",
+                [
+                    primitives.TextString(
+                        "Example Group",
+                        tag=enums.Tags.OBJECT_GROUP
+                    )
+                ]
+            )
+        )
+
+        # Test getting the index for an ApplicationSpecificInfo attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Application Specific Information",
+            attributes.ApplicationSpecificInformation(
+                application_namespace="Example Namespace",
+                application_data="Example Data"
+            )
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Application Specific Information",
+            attributes.ApplicationSpecificInformation(
+                application_namespace="Wrong Namespace",
+                application_data="Wrong Data"
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a CertificateType attribute
+        index = e._get_attribute_index_from_managed_object(
+            certificate,
+            "Certificate Type",
+            primitives.Enumeration(
+                enums.CertificateType,
+                enums.CertificateType.X_509,
+                tag=enums.Tags.CERTIFICATE_TYPE
+            )
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            certificate,
+            "Certificate Type",
+            primitives.Enumeration(
+                enums.CertificateType,
+                enums.CertificateType.PGP,
+                tag=enums.Tags.CERTIFICATE_TYPE
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a CryptographicAlgorithm attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Cryptographic Algorithm",
+            primitives.Enumeration(
+                enums.CryptographicAlgorithm,
+                enums.CryptographicAlgorithm.AES,
+                tag=enums.Tags.CRYPTOGRAPHIC_ALGORITHM
+            )
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Cryptographic Algorithm",
+            primitives.Enumeration(
+                enums.CryptographicAlgorithm,
+                enums.CryptographicAlgorithm.RSA,
+                tag=enums.Tags.CRYPTOGRAPHIC_ALGORITHM
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a CryptographicLength attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Cryptographic Length",
+            primitives.Integer(
+                0,
+                tag=enums.Tags.CRYPTOGRAPHIC_LENGTH
+            )
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Cryptographic Length",
+            primitives.Integer(
+                128,
+                tag=enums.Tags.CRYPTOGRAPHIC_LENGTH
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a CryptographicUsageMasks attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Cryptographic Usage Mask",
+            primitives.Integer(
+                12,
+                tag=enums.Tags.CRYPTOGRAPHIC_USAGE_MASK
+            )
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Cryptographic Usage Mask",
+            primitives.Integer(
+                0,
+                tag=enums.Tags.CRYPTOGRAPHIC_USAGE_MASK
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a InitialDate attribute
+        date = e._get_attribute_from_managed_object(
+            symmetric_key,
+            "Initial Date"
+        )
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Initial Date",
+            primitives.DateTime(
+                date,
+                tag=enums.Tags.INITIAL_DATE
+            )
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Initial Date",
+            primitives.DateTime(
+                9999,
+                tag=enums.Tags.INITIAL_DATE
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a Name attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Name",
+            attributes.Name(
+                name_value=attributes.Name.NameValue("Name 2")
+            )
+        )
+        self.assertEqual(2, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Name",
+            attributes.Name(
+                name_value=attributes.Name.NameValue("Name 3")
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a ObjectGroup attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Object Group",
+            primitives.TextString(
+                "Example Group",
+                tag=enums.Tags.OBJECT_GROUP
+            )
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Object Group",
+            primitives.TextString(
+                "Invalid Group",
+                tag=enums.Tags.OBJECT_GROUP
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a ObjectType attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Object Type",
+            primitives.Enumeration(
+                enums.ObjectType,
+                enums.ObjectType.SYMMETRIC_KEY,
+                tag=enums.Tags.OBJECT_TYPE
+            )
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Object Type",
+            primitives.Enumeration(
+                enums.ObjectType,
+                enums.ObjectType.CERTIFICATE,
+                tag=enums.Tags.OBJECT_TYPE
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a OperationPolicyName attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Operation Policy Name",
+            primitives.TextString(
+                "default",
+                tag=enums.Tags.OPERATION_POLICY_NAME
+            )
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Operation Policy Name",
+            primitives.TextString(
+                "invalid",
+                tag=enums.Tags.OPERATION_POLICY_NAME
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a Sensitive attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Sensitive",
+            primitives.Boolean(
+                False,
+                tag=enums.Tags.SENSITIVE
+            )
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Sensitive",
+            primitives.Boolean(
+                True,
+                tag=enums.Tags.SENSITIVE
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a State attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "State",
+            primitives.Enumeration(
+                enums.State,
+                enums.State.PRE_ACTIVE,
+                tag=enums.Tags.STATE
+            )
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "State",
+            primitives.Enumeration(
+                enums.State,
+                enums.State.ACTIVE,
+                tag=enums.Tags.STATE
+            )
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for a UniqueIdentifier attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Unique Identifier",
+            primitives.TextString(value="1", tag=enums.Tags.UNIQUE_IDENTIFIER)
+        )
+        self.assertEqual(0, index)
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Unique Identifier",
+            primitives.TextString(value="9", tag=enums.Tags.UNIQUE_IDENTIFIER)
+        )
+        self.assertIsNone(index)
+
+        # Test getting the index for an unsupported attribute
+        index = e._get_attribute_index_from_managed_object(
+            symmetric_key,
+            "Archive Date",
+            None
+        )
+        self.assertIsNone(index)
 
     def test_set_attributes_on_managed_object(self):
         """
@@ -1750,6 +2101,10 @@ class TestKmipEngine(testtools.TestCase):
                 enums.CryptographicUsageMask.DECRYPT
             ]
         )
+        sensitive = attribute_factory.create_attribute(
+            enums.AttributeType.SENSITIVE,
+            True
+        )
         managed_object = pie_objects.SymmetricKey(
             enums.CryptographicAlgorithm.AES,
             0,
@@ -1764,6 +2119,7 @@ class TestKmipEngine(testtools.TestCase):
         )
         self.assertEqual(0, managed_object.cryptographic_length)
         self.assertEqual([], managed_object.cryptographic_usage_masks)
+        self.assertFalse(managed_object.sensitive)
 
         e._set_attribute_on_managed_object(
             managed_object,
@@ -1801,6 +2157,13 @@ class TestKmipEngine(testtools.TestCase):
             ],
             managed_object.cryptographic_usage_masks
         )
+
+        e._set_attribute_on_managed_object(
+            managed_object,
+            ("Sensitive", sensitive.attribute_value)
+        )
+
+        self.assertTrue(managed_object.sensitive)
 
     def test_set_attribute_on_managed_object_unsupported_features(self):
         """
@@ -1900,21 +2263,508 @@ class TestKmipEngine(testtools.TestCase):
         )
 
         # Test that an unsupported attribute cannot be set.
-        object_group = attribute_factory.create_attribute(
-            enums.AttributeType.OBJECT_GROUP,
-            'Test Group'
+        custom_attribute = attribute_factory.create_attribute(
+            enums.AttributeType.CUSTOM_ATTRIBUTE,
+            "Test Group"
         )
 
         args = (
             managed_object,
-            ('Object Group', object_group.attribute_value)
+            ("Custom Attribute", custom_attribute.attribute_value)
         )
-        regex = "The Object Group attribute is unsupported."
+        regex = "The Custom Attribute attribute is unsupported."
         six.assertRaisesRegex(
             self,
             exceptions.InvalidField,
             regex,
             e._set_attribute_on_managed_object,
+            *args
+        )
+
+    def test_set_attribute_on_managed_object_by_index(self):
+        """
+        Test that an attribute can be modified on a managed object given its
+        name, index, and new value.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._logger = mock.MagicMock()
+
+        symmetric_key = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b'',
+            masks=[enums.CryptographicUsageMask.ENCRYPT,
+                   enums.CryptographicUsageMask.DECRYPT]
+        )
+
+        e._data_session.add(symmetric_key)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._set_attribute_on_managed_object(
+            symmetric_key,
+            (
+                "Application Specific Information",
+                [
+                    attributes.ApplicationSpecificInformation(
+                        application_namespace="Example Namespace 1",
+                        application_data="Example Data 1"
+                    ),
+                    attributes.ApplicationSpecificInformation(
+                        application_namespace="Example Namespace 2",
+                        application_data="Example Data 2"
+                    )
+                ]
+            )
+        )
+        e._set_attribute_on_managed_object(
+            symmetric_key,
+            (
+                "Name",
+                [
+                    attributes.Name(
+                        name_value=attributes.Name.NameValue("Name 1")
+                    ),
+                    attributes.Name(
+                        name_value=attributes.Name.NameValue("Name 2")
+                    )
+                ]
+            )
+        )
+        e._set_attribute_on_managed_object(
+            symmetric_key,
+            (
+                "Object Group",
+                [
+                    primitives.TextString(
+                        "Example Group 1",
+                        tag=enums.Tags.OBJECT_GROUP
+                    ),
+                    primitives.TextString(
+                        "Example Group 2",
+                        tag=enums.Tags.OBJECT_GROUP
+                    )
+                ]
+            )
+        )
+
+        # Test setting an ApplicationSpecificInformation attribute by index
+        a = e._get_attribute_from_managed_object(
+            symmetric_key,
+            "Application Specific Information"
+        )
+        self.assertEqual(2, len(a))
+        self.assertEqual(
+            "Example Namespace 1",
+            a[0].get("application_namespace")
+        )
+        self.assertEqual("Example Data 1", a[0].get("application_data"))
+        self.assertEqual(
+            "Example Namespace 2",
+            a[1].get("application_namespace")
+        )
+        self.assertEqual("Example Data 2", a[1].get("application_data"))
+        e._set_attribute_on_managed_object_by_index(
+            symmetric_key,
+            "Application Specific Information",
+            attributes.ApplicationSpecificInformation(
+                application_namespace="Example Namespace 3",
+                application_data="Example Data 3"
+            ),
+            1
+        )
+        a = e._get_attribute_from_managed_object(
+            symmetric_key,
+            "Application Specific Information"
+        )
+        self.assertEqual(2, len(a))
+        self.assertEqual(
+            "Example Namespace 1",
+            a[0].get("application_namespace")
+        )
+        self.assertEqual("Example Data 1", a[0].get("application_data"))
+        self.assertEqual(
+            "Example Namespace 3",
+            a[1].get("application_namespace")
+        )
+        self.assertEqual("Example Data 3", a[1].get("application_data"))
+
+        # Test setting a Name attribute by index
+        a = e._get_attribute_from_managed_object(symmetric_key, "Name")
+        self.assertEqual(3, len(a))
+        self.assertEqual("Symmetric Key", a[0].name_value.value)
+        self.assertEqual("Name 1", a[1].name_value.value)
+        self.assertEqual("Name 2", a[2].name_value.value)
+        e._set_attribute_on_managed_object_by_index(
+            symmetric_key,
+            "Name",
+            attributes.Name(
+                name_value=attributes.Name.NameValue("Name 3")
+            ),
+            1
+        )
+        a = e._get_attribute_from_managed_object(symmetric_key, "Name")
+        self.assertEqual(3, len(a))
+        self.assertEqual("Symmetric Key", a[0].name_value.value)
+        self.assertEqual("Name 3", a[1].name_value.value)
+        self.assertEqual("Name 2", a[2].name_value.value)
+
+        # Test setting an ObjectGroup attribute by index
+        a = e._get_attribute_from_managed_object(symmetric_key, "Object Group")
+        self.assertEqual(2, len(a))
+        self.assertEqual("Example Group 1", a[0])
+        self.assertEqual("Example Group 2", a[1])
+        e._set_attribute_on_managed_object_by_index(
+            symmetric_key,
+            "Object Group",
+            primitives.TextString(
+                "Example Group 3",
+                tag=enums.Tags.OBJECT_GROUP
+            ),
+            1
+        )
+        a = e._get_attribute_from_managed_object(symmetric_key, "Object Group")
+        self.assertEqual(2, len(a))
+        self.assertEqual("Example Group 1", a[0])
+        self.assertEqual("Example Group 3", a[1])
+
+    def test_delete_attribute_from_managed_object(self):
+        """
+        Test that various attributes can be deleted correctly from a given
+        managed object.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._logger = mock.MagicMock()
+
+        attribute_factory = factory.AttributeFactory()
+
+        name_1 = attribute_factory.create_attribute(
+            enums.AttributeType.NAME,
+            attributes.Name.create(
+                "Name 1",
+                enums.NameType.UNINTERPRETED_TEXT_STRING
+            )
+        )
+        name_2 = attribute_factory.create_attribute(
+            enums.AttributeType.NAME,
+            attributes.Name.create(
+                "Name 2",
+                enums.NameType.UNINTERPRETED_TEXT_STRING
+            )
+        )
+        app_specific_info_1 = attribute_factory.create_attribute(
+            enums.AttributeType.APPLICATION_SPECIFIC_INFORMATION,
+            {
+                "application_namespace": "Namespace 1",
+                "application_data": "Data 1"
+            }
+        )
+        app_specific_info_2 = attribute_factory.create_attribute(
+            enums.AttributeType.APPLICATION_SPECIFIC_INFORMATION,
+            {
+                "application_namespace": "Namespace 2",
+                "application_data": "Data 2"
+            }
+        )
+        object_group_1 = attribute_factory.create_attribute(
+            enums.AttributeType.OBJECT_GROUP,
+            "Object Group 1"
+        )
+        object_group_2 = attribute_factory.create_attribute(
+            enums.AttributeType.OBJECT_GROUP,
+            "Object Group 2"
+        )
+        managed_object = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+        managed_object.names.clear()
+
+        self.assertEqual(0, len(managed_object.names))
+        self.assertEqual(0, len(managed_object.app_specific_info))
+        self.assertEqual(0, len(managed_object.object_groups))
+
+        e._set_attribute_on_managed_object(
+            managed_object,
+            (
+                "Name",
+                [
+                    name_1.attribute_value,
+                    name_2.attribute_value
+                ]
+            )
+        )
+        e._set_attribute_on_managed_object(
+            managed_object,
+            (
+                "Application Specific Information",
+                [
+                    app_specific_info_1.attribute_value,
+                    app_specific_info_2.attribute_value
+                ]
+            )
+        )
+        e._set_attribute_on_managed_object(
+            managed_object,
+            (
+                "Object Group",
+                [
+                    object_group_1.attribute_value,
+                    object_group_2.attribute_value
+                ]
+            )
+        )
+
+        self.assertEqual(2, len(managed_object.names))
+        self.assertEqual(2, len(managed_object.app_specific_info))
+        self.assertEqual(2, len(managed_object.object_groups))
+
+        e._delete_attribute_from_managed_object(
+            managed_object,
+            (
+                "Application Specific Information",
+                0,
+                None
+            )
+        )
+
+        self.assertEqual(1, len(managed_object.app_specific_info))
+
+        e._delete_attribute_from_managed_object(
+            managed_object,
+            (
+                "Application Specific Information",
+                0,
+                app_specific_info_2.attribute_value
+            )
+        )
+
+        self.assertEqual(0, len(managed_object.app_specific_info))
+
+        e._delete_attribute_from_managed_object(
+            managed_object,
+            (
+                "Name",
+                None,
+                primitives.TextString(value="Name 2", tag=enums.Tags.NAME)
+            )
+        )
+
+        self.assertEqual(1, len(managed_object.names))
+        self.assertEqual("Name 1", managed_object.names[0])
+
+        e._delete_attribute_from_managed_object(
+            managed_object,
+            (
+                "Object Group",
+                None,
+                None
+            )
+        )
+
+        self.assertEqual(0, len(managed_object.object_groups))
+
+        e._set_attribute_on_managed_object(
+            managed_object,
+            (
+                "Object Group",
+                [object_group_1.attribute_value]
+            )
+        )
+
+        self.assertEqual(1, len(managed_object.object_groups))
+
+        e._delete_attribute_from_managed_object(
+            managed_object,
+            (
+                "Object Group",
+                None,
+                primitives.TextString(
+                    value="Object Group 1",
+                    tag=enums.Tags.OBJECT_GROUP
+                )
+            )
+        )
+
+        self.assertEqual(0, len(managed_object.object_groups))
+
+    def test_delete_attribute_from_managed_object_unsupported_attribute(self):
+        """
+        Test that an ItemNotFound error is raised when attempting to delete an
+        unsupported attribute from a managed object.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._logger = mock.MagicMock()
+
+        managed_object = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+        args = (managed_object, ("Digital Signature Algorithm", None, None))
+        self.assertRaisesRegex(
+            exceptions.ItemNotFound,
+            "The 'Digital Signature Algorithm' attribute is not applicable "
+            "to 'SymmetricKey' objects.",
+            e._delete_attribute_from_managed_object,
+            *args
+        )
+
+    def test_delete_attribute_from_managed_object_undeletable_attribute(self):
+        """
+        Test that a PermissionDenied error is raised when attempting to delete
+        a required attribute from a managed object.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._logger = mock.MagicMock()
+
+        managed_object = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+        args = (managed_object, ("Cryptographic Algorithm", None, None))
+        self.assertRaisesRegex(
+            exceptions.PermissionDenied,
+            "Cannot delete a required attribute.",
+            e._delete_attribute_from_managed_object,
+            *args
+        )
+
+    def test_delete_attribute_from_managed_object_unsupported_multivalue(self):
+        """
+        Test that an InvalidField error is raised when attempting to delete an
+        unsupported multivalued attribute.
+        """
+        # TODO (peterhamilton) Remove this test once all multivalued attributes
+        # are supported.
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._logger = mock.MagicMock()
+
+        managed_object = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+        args = (managed_object, ("Link", None, None))
+        self.assertRaisesRegex(
+            exceptions.InvalidField,
+            "The 'Link' attribute is not supported.",
+            e._delete_attribute_from_managed_object,
+            *args
+        )
+
+    def test_delete_attribute_from_managed_object_bad_attribute_value(self):
+        """
+        Test that an ItemNotFound error is raised when attempting to delete
+        an attribute by value that cannot be found on a managed object.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._logger = mock.MagicMock()
+
+        managed_object = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+        args = (
+            managed_object,
+            (
+                "Object Group",
+                None,
+                primitives.TextString(
+                    value="invalid",
+                    tag=enums.Tags.OBJECT_GROUP
+                )
+            )
+        )
+        self.assertRaisesRegex(
+            exceptions.ItemNotFound,
+            "Could not locate the attribute instance with the specified "
+            "value: {'object_group': 'invalid'}",
+            e._delete_attribute_from_managed_object,
+            *args
+        )
+
+    def test_delete_attribute_from_managed_object_bad_attribute_index(self):
+        """
+        Test that an ItemNotFound error is raised when attempting to delete
+        an attribute by index that cannot be found on a managed object.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._logger = mock.MagicMock()
+
+        managed_object = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+        args = (
+            managed_object,
+            (
+                "Object Group",
+                3,
+                None
+            )
+        )
+        self.assertRaisesRegex(
+            exceptions.ItemNotFound,
+            "Could not locate the attribute instance with the specified "
+            "index: 3",
+            e._delete_attribute_from_managed_object,
+            *args
+        )
+
+    def test_delete_attribute_from_managed_object_bad_single_value(self):
+        """
+        Test that an InvalidField error is raised when attempting to delete
+        a single-valued attribute from a managed object.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._logger = mock.MagicMock()
+
+        managed_object = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+        args = (
+            managed_object,
+            (
+                "Contact Information",
+                None,
+                None
+            )
+        )
+        self.assertRaisesRegex(
+            exceptions.InvalidField,
+            "The 'Contact Information' attribute is not supported",
+            e._delete_attribute_from_managed_object,
             *args
         )
 
@@ -2423,6 +3273,17 @@ class TestKmipEngine(testtools.TestCase):
                 attribute_factory.create_attribute(
                     enums.AttributeType.OPERATION_POLICY_NAME,
                     'test'
+                ),
+                attribute_factory.create_attribute(
+                    enums.AttributeType.APPLICATION_SPECIFIC_INFORMATION,
+                    {
+                        "application_namespace": "ssl",
+                        "application_data": "www.example.com"
+                    }
+                ),
+                attribute_factory.create_attribute(
+                    enums.AttributeType.OBJECT_GROUP,
+                    "Group1"
                 )
             ]
         )
@@ -2473,6 +3334,17 @@ class TestKmipEngine(testtools.TestCase):
         self.assertEqual('test', symmetric_key.operation_policy_name)
         self.assertIsNotNone(symmetric_key.initial_date)
         self.assertNotEqual(0, symmetric_key.initial_date)
+        self.assertEqual(1, len(symmetric_key.app_specific_info))
+        self.assertEqual(
+            "ssl",
+            symmetric_key.app_specific_info[0].application_namespace
+        )
+        self.assertEqual(
+            "www.example.com",
+            symmetric_key.app_specific_info[0].application_data
+        )
+        self.assertEqual(1, len(symmetric_key.object_groups))
+        self.assertEqual("Group1", symmetric_key.object_groups[0].object_group)
 
         self.assertEqual(uid, e._id_placeholder)
 
@@ -2666,7 +3538,7 @@ class TestKmipEngine(testtools.TestCase):
 
         attribute_factory = factory.AttributeFactory()
 
-        common_template = objects.CommonTemplateAttribute(
+        common_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.NAME,
@@ -2683,9 +3555,10 @@ class TestKmipEngine(testtools.TestCase):
                     enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
                     2048
                 )
-            ]
+            ],
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
         )
-        public_template = objects.PublicKeyTemplateAttribute(
+        public_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
@@ -2693,9 +3566,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.ENCRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
         )
-        private_template = objects.PrivateKeyTemplateAttribute(
+        private_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
@@ -2703,7 +3577,8 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.DECRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
         )
         payload = payloads.CreateKeyPairRequestPayload(
             common_template,
@@ -2719,9 +3594,9 @@ class TestKmipEngine(testtools.TestCase):
             "Processing operation: CreateKeyPair"
         )
 
-        public_id = response_payload.public_key_uuid.value
+        public_id = response_payload.public_key_unique_identifier
         self.assertEqual('1', public_id)
-        private_id = response_payload.private_key_uuid.value
+        private_id = response_payload.private_key_unique_identifier
         self.assertEqual('2', private_id)
 
         # Retrieve the stored public key and verify all attributes were set
@@ -2794,7 +3669,7 @@ class TestKmipEngine(testtools.TestCase):
         attribute_factory = factory.AttributeFactory()
 
         # Test that a missing PublicKey CryptographicAlgorithm raises an error
-        common_template = objects.CommonTemplateAttribute(
+        common_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.NAME,
@@ -2803,9 +3678,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.NameType.UNINTERPRETED_TEXT_STRING
                     )
                 )
-            ]
+            ],
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
         )
-        public_template = objects.PublicKeyTemplateAttribute(
+        public_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
@@ -2817,9 +3693,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.ENCRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
         )
-        private_template = objects.PrivateKeyTemplateAttribute(
+        private_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -2835,7 +3712,8 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.DECRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
         )
         payload = payloads.CreateKeyPairRequestPayload(
             common_template,
@@ -2861,7 +3739,7 @@ class TestKmipEngine(testtools.TestCase):
         e._logger.reset_mock()
 
         # Test that a missing PrivateKey CryptographicAlgorithm raises an error
-        common_template = objects.CommonTemplateAttribute(
+        common_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.NAME,
@@ -2870,9 +3748,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.NameType.UNINTERPRETED_TEXT_STRING
                     )
                 )
-            ]
+            ],
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
         )
-        public_template = objects.PublicKeyTemplateAttribute(
+        public_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -2888,9 +3767,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.ENCRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
         )
-        private_template = objects.PrivateKeyTemplateAttribute(
+        private_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
@@ -2902,7 +3782,8 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.DECRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
         )
         payload = payloads.CreateKeyPairRequestPayload(
             common_template,
@@ -2928,7 +3809,7 @@ class TestKmipEngine(testtools.TestCase):
         e._logger.reset_mock()
 
         # Test that a missing PublicKey CryptographicLength raises an error
-        common_template = objects.CommonTemplateAttribute(
+        common_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.NAME,
@@ -2937,9 +3818,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.NameType.UNINTERPRETED_TEXT_STRING
                     )
                 )
-            ]
+            ],
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
         )
-        public_template = objects.PublicKeyTemplateAttribute(
+        public_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -2951,9 +3833,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.ENCRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
         )
-        private_template = objects.PrivateKeyTemplateAttribute(
+        private_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -2969,7 +3852,8 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.DECRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
         )
         payload = payloads.CreateKeyPairRequestPayload(
             common_template,
@@ -2995,7 +3879,7 @@ class TestKmipEngine(testtools.TestCase):
         e._logger.reset_mock()
 
         # Test that a missing PrivateKey CryptographicLength raises an error
-        common_template = objects.CommonTemplateAttribute(
+        common_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.NAME,
@@ -3004,9 +3888,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.NameType.UNINTERPRETED_TEXT_STRING
                     )
                 )
-            ]
+            ],
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
         )
-        public_template = objects.PublicKeyTemplateAttribute(
+        public_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -3022,9 +3907,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.ENCRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
         )
-        private_template = objects.PrivateKeyTemplateAttribute(
+        private_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -3036,7 +3922,8 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.DECRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
         )
         payload = payloads.CreateKeyPairRequestPayload(
             common_template,
@@ -3062,7 +3949,7 @@ class TestKmipEngine(testtools.TestCase):
         e._logger.reset_mock()
 
         # Test that a missing PublicKey CryptographicUsageMask raises an error
-        common_template = objects.CommonTemplateAttribute(
+        common_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.NAME,
@@ -3071,9 +3958,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.NameType.UNINTERPRETED_TEXT_STRING
                     )
                 )
-            ]
+            ],
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
         )
-        public_template = objects.PublicKeyTemplateAttribute(
+        public_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -3083,9 +3971,10 @@ class TestKmipEngine(testtools.TestCase):
                     enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
                     2048
                 )
-            ]
+            ],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
         )
-        private_template = objects.PrivateKeyTemplateAttribute(
+        private_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -3101,7 +3990,8 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.DECRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
         )
         payload = payloads.CreateKeyPairRequestPayload(
             common_template,
@@ -3127,7 +4017,7 @@ class TestKmipEngine(testtools.TestCase):
         e._logger.reset_mock()
 
         # Test that a missing PrivateKey CryptographicUsageMask raises an error
-        common_template = objects.CommonTemplateAttribute(
+        common_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.NAME,
@@ -3136,9 +4026,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.NameType.UNINTERPRETED_TEXT_STRING
                     )
                 )
-            ]
+            ],
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
         )
-        public_template = objects.PublicKeyTemplateAttribute(
+        public_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -3154,9 +4045,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.ENCRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
         )
-        private_template = objects.PrivateKeyTemplateAttribute(
+        private_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -3166,7 +4058,8 @@ class TestKmipEngine(testtools.TestCase):
                     enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
                     2048
                 )
-            ]
+            ],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
         )
         payload = payloads.CreateKeyPairRequestPayload(
             common_template,
@@ -3205,7 +4098,7 @@ class TestKmipEngine(testtools.TestCase):
         attribute_factory = factory.AttributeFactory()
 
         # Test that mismatched CryptographicAlgorithms raise an error.
-        common_template = objects.CommonTemplateAttribute(
+        common_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.NAME,
@@ -3214,9 +4107,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.NameType.UNINTERPRETED_TEXT_STRING
                     )
                 )
-            ]
+            ],
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
         )
-        public_template = objects.PublicKeyTemplateAttribute(
+        public_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -3232,9 +4126,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.ENCRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
         )
-        private_template = objects.PrivateKeyTemplateAttribute(
+        private_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -3250,7 +4145,8 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.DECRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
         )
         payload = payloads.CreateKeyPairRequestPayload(
             common_template,
@@ -3275,7 +4171,7 @@ class TestKmipEngine(testtools.TestCase):
         e._logger.reset_mock()
 
         # Test that mismatched CryptographicAlgorithms raise an error.
-        common_template = objects.CommonTemplateAttribute(
+        common_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.NAME,
@@ -3284,9 +4180,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.NameType.UNINTERPRETED_TEXT_STRING
                     )
                 )
-            ]
+            ],
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
         )
-        public_template = objects.PublicKeyTemplateAttribute(
+        public_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -3302,9 +4199,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.ENCRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
         )
-        private_template = objects.PrivateKeyTemplateAttribute(
+        private_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
@@ -3320,7 +4218,8 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.DECRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
         )
         payload = payloads.CreateKeyPairRequestPayload(
             common_template,
@@ -3343,6 +4242,1207 @@ class TestKmipEngine(testtools.TestCase):
             "Processing operation: CreateKeyPair"
         )
         e._logger.reset_mock()
+
+    def test_delete_attribute(self):
+        """
+        Test that a DeleteAttribute request can be processed correctly.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        attribute_factory = factory.AttributeFactory()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+        object_group_1 = attribute_factory.create_attribute(
+            enums.AttributeType.OBJECT_GROUP,
+            "Object Group 1"
+        )
+        object_group_2 = attribute_factory.create_attribute(
+            enums.AttributeType.OBJECT_GROUP,
+            "Object Group 2"
+        )
+
+        e._data_session.add(secret)
+        e._set_attribute_on_managed_object(
+            secret,
+            (
+                "Object Group",
+                [
+                    object_group_1.attribute_value,
+                    object_group_2.attribute_value
+                ]
+            )
+        )
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        # Confirm that the attribute was actually added by fetching the
+        # managed object fresh from the database and checking it.
+        managed_object = e._get_object_with_access_controls(
+            "1",
+            enums.Operation.DELETE_ATTRIBUTE
+        )
+        self.assertEqual(2, len(managed_object.object_groups))
+
+        payload = payloads.DeleteAttributeRequestPayload(
+            unique_identifier="1",
+            attribute_name="Object Group",
+            attribute_index=1
+        )
+
+        response_payload = e._process_delete_attribute(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call(
+            "Processing operation: DeleteAttribute"
+        )
+        self.assertEqual(
+            "1",
+            response_payload.unique_identifier
+        )
+        self.assertEqual(
+            attribute_factory.create_attribute(
+                enums.AttributeType.OBJECT_GROUP,
+                "Object Group 2",
+                1
+            ),
+            response_payload.attribute
+        )
+
+        # Confirm that the attribute was actually deleted by fetching the
+        # managed object fresh from the database and checking it.
+        managed_object = e._get_object_with_access_controls(
+            response_payload.unique_identifier,
+            enums.Operation.DELETE_ATTRIBUTE
+        )
+
+        self.assertEqual(1, len(managed_object.object_groups))
+        payload = payloads.DeleteAttributeRequestPayload(
+            unique_identifier="1",
+            attribute_name="Object Group"
+        )
+
+        response_payload = e._process_delete_attribute(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call(
+            "Processing operation: DeleteAttribute"
+        )
+        self.assertEqual(
+            "1",
+            response_payload.unique_identifier
+        )
+        self.assertEqual(
+            attribute_factory.create_attribute(
+                enums.AttributeType.OBJECT_GROUP,
+                "Object Group 1",
+                0
+            ),
+            response_payload.attribute
+        )
+
+        # Confirm that the attribute was actually deleted by fetching the
+        # managed object fresh from the database and checking it.
+        managed_object = e._get_object_with_access_controls(
+            response_payload.unique_identifier,
+            enums.Operation.DELETE_ATTRIBUTE
+        )
+        self.assertEqual(0, len(managed_object.object_groups))
+
+    def test_delete_attribute_with_kmip_2_0(self):
+        """
+        Test that a DeleteAttribute request can be processed correctly
+        when using KMIP 2.0 payload features.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        attribute_factory = factory.AttributeFactory()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+        object_group = attribute_factory.create_attribute(
+            enums.AttributeType.OBJECT_GROUP,
+            "Object Group 1"
+        )
+
+        e._data_session.add(secret)
+        e._set_attribute_on_managed_object(
+            secret,
+            (
+                "Object Group",
+                [object_group.attribute_value]
+            )
+        )
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        # Confirm that the attribute was actually added by fetching the
+        # managed object fresh from the database and checking it.
+        managed_object = e._get_object_with_access_controls(
+            "1",
+            enums.Operation.DELETE_ATTRIBUTE
+        )
+        self.assertEqual(1, len(managed_object.names))
+        self.assertEqual(1, len(managed_object.object_groups))
+
+        payload = payloads.DeleteAttributeRequestPayload(
+            unique_identifier="1",
+            current_attribute=objects.CurrentAttribute(
+                attribute=primitives.TextString(
+                    value="Object Group 1",
+                    tag=enums.Tags.OBJECT_GROUP
+                )
+            ),
+            attribute_reference=objects.AttributeReference(
+                vendor_identification="Vendor 1",
+                attribute_name="Object Group"
+            )
+        )
+
+        response_payload = e._process_delete_attribute(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call(
+            "Processing operation: DeleteAttribute"
+        )
+        self.assertEqual(
+            "1",
+            response_payload.unique_identifier
+        )
+        self.assertIsNone(response_payload.attribute)
+
+        # Confirm that the attribute was actually deleted by fetching the
+        # managed object fresh from the database and checking it.
+        managed_object = e._get_object_with_access_controls(
+            response_payload.unique_identifier,
+            enums.Operation.DELETE_ATTRIBUTE
+        )
+        self.assertEqual(0, len(managed_object.object_groups))
+
+        payload = payloads.DeleteAttributeRequestPayload(
+            unique_identifier="1",
+            attribute_reference=objects.AttributeReference(
+                vendor_identification="Vendor 1",
+                attribute_name="Name"
+            )
+        )
+
+        response_payload = e._process_delete_attribute(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call(
+            "Processing operation: DeleteAttribute"
+        )
+        self.assertEqual(
+            "1",
+            response_payload.unique_identifier
+        )
+        self.assertIsNone(response_payload.attribute)
+
+        # Confirm that the attribute was actually deleted by fetching the
+        # managed object fresh from the database and checking it.
+        managed_object = e._get_object_with_access_controls(
+            response_payload.unique_identifier,
+            enums.Operation.DELETE_ATTRIBUTE
+        )
+        self.assertEqual(0, len(managed_object.names))
+
+    def test_delete_attribute_with_invalid_current_attribute(self):
+        """
+        Test that an ItemNotFound error is raised when attempting to delete
+        an invalid current attribute from a managed object.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        current_attribute = objects.CurrentAttribute()
+        current_attribute._attribute = primitives.TextString(
+            value="Object Group 1",
+            tag=enums.Tags.CURRENT_ATTRIBUTE
+        )
+        args = (
+            payloads.DeleteAttributeRequestPayload(
+                unique_identifier="1",
+                current_attribute=current_attribute
+            ),
+        )
+
+        self.assertRaisesRegex(
+            exceptions.ItemNotFound,
+            "No attribute with the specified name exists.",
+            e._process_delete_attribute,
+            *args
+        )
+
+    def test_delete_attribute_with_missing_current_attribute_reference(self):
+        """
+        Test that an InvalidMessage error is raised when attempting to delete
+        an attribute without specifying a current attribute or an attribute
+        reference (under KMIP 2.0+).
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        args = (
+            payloads.DeleteAttributeRequestPayload(unique_identifier="1"),
+        )
+
+        self.assertRaisesRegex(
+            exceptions.InvalidMessage,
+            "The DeleteAttribute request must specify the current attribute "
+            "or an attribute reference.",
+            e._process_delete_attribute,
+            *args
+        )
+
+    def test_delete_attribute_with_missing_attribute_name(self):
+        """
+        Test that an InvalidMessage error is raised when attempting to delete
+        an attribute without specifying the attribute name (under KMIP 1.0+).
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        args = (
+            payloads.DeleteAttributeRequestPayload(unique_identifier="1"),
+        )
+
+        self.assertRaisesRegex(
+            exceptions.InvalidMessage,
+            "The DeleteAttribute request must specify the attribute name.",
+            e._process_delete_attribute,
+            *args
+        )
+
+    def test_delete_attribute_with_invalid_attribute_index(self):
+        """
+        Test that an ItemNotFound error is raised when attempting to delete
+        an attribute when specifying an invalid attribute index.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        args = (
+            payloads.DeleteAttributeRequestPayload(
+                unique_identifier="1",
+                attribute_name="Name",
+                attribute_index=20),
+        )
+
+        self.assertRaisesRegex(
+            exceptions.ItemNotFound,
+            "Could not locate the attribute instance with the specified "
+            "index: 20",
+            e._process_delete_attribute,
+            *args
+        )
+
+    def test_set_attribute(self):
+        """
+        Test that a SetAttribute request can be processed correctly.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        # Confirm that the attribute is set to its default value by
+        # fetching the managed object fresh from the database and
+        # checking it.
+        managed_object = e._get_object_with_access_controls(
+            "1",
+            enums.Operation.SET_ATTRIBUTE
+        )
+        self.assertFalse(managed_object.sensitive)
+
+        payload = payloads.SetAttributeRequestPayload(
+            unique_identifier="1",
+            new_attribute=objects.NewAttribute(
+                attribute=primitives.Boolean(
+                    value=True,
+                    tag=enums.Tags.SENSITIVE
+                )
+            )
+        )
+
+        response_payload = e._process_set_attribute(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call(
+            "Processing operation: SetAttribute"
+        )
+        self.assertEqual(
+            "1",
+            response_payload.unique_identifier
+        )
+
+        # Confirm that the attribute was actually set by fetching the
+        # managed object fresh from the database and checking it.
+        managed_object = e._get_object_with_access_controls(
+            response_payload.unique_identifier,
+            enums.Operation.SET_ATTRIBUTE
+        )
+        self.assertTrue(managed_object.sensitive)
+
+    def test_set_attribute_with_multivalued_attribute(self):
+        """
+        Test that a KmipError is raised when attempting to set the value of
+        a multivalued attribute.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        args = (
+            payloads.SetAttributeRequestPayload(
+                unique_identifier="1",
+                new_attribute=objects.NewAttribute(
+                    attribute=primitives.TextString(
+                        value="New Name",
+                        tag=enums.Tags.NAME
+                    )
+                )
+            ),
+        )
+
+        self.assertRaisesRegex(
+            exceptions.KmipError,
+            "The 'Name' attribute is multi-valued. Multi-valued attributes "
+            "cannot be set with the SetAttribute operation.",
+            e._process_set_attribute,
+            *args
+        )
+
+    def test_set_attribute_with_non_client_modifiable_attribute(self):
+        """
+        Test that a KmipError is raised when attempting to set the value of
+        a attribute not modifiable by the client.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        args = (
+            payloads.SetAttributeRequestPayload(
+                unique_identifier="1",
+                new_attribute=objects.NewAttribute(
+                    attribute=primitives.Enumeration(
+                        enums.CryptographicAlgorithm,
+                        enums.CryptographicAlgorithm.RSA,
+                        enums.Tags.CRYPTOGRAPHIC_ALGORITHM
+                    )
+                )
+            ),
+        )
+
+        self.assertRaisesRegex(
+            exceptions.KmipError,
+            "The 'Cryptographic Algorithm' attribute is read-only and cannot "
+            "be modified by the client.",
+            e._process_set_attribute,
+            *args
+        )
+
+    def test_modify_attribute(self):
+        """
+        Test that a ModifyAttribute request can be processed correctly.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(1, 4)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Confirm that the attribute is set to its default value by
+        # fetching the managed object fresh from the database and
+        # checking it.
+        managed_object = e._get_object_with_access_controls(
+            "1",
+            enums.Operation.MODIFY_ATTRIBUTE
+        )
+        self.assertFalse(managed_object.sensitive)
+
+        payload = payloads.ModifyAttributeRequestPayload(
+            unique_identifier="1",
+            attribute=attribute_factory.create_attribute(
+                enums.AttributeType.SENSITIVE,
+                True
+            )
+        )
+
+        response_payload = e._process_modify_attribute(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call(
+            "Processing operation: ModifyAttribute"
+        )
+        self.assertEqual("1", response_payload.unique_identifier)
+        self.assertEqual(
+            "Sensitive",
+            response_payload.attribute.attribute_name.value
+        )
+        self.assertIsNone(response_payload.attribute.attribute_index)
+        self.assertEqual(
+            True,
+            response_payload.attribute.attribute_value.value
+        )
+
+        # Confirm that the attribute was actually set by fetching the
+        # managed object fresh from the database and checking it.
+        managed_object = e._get_object_with_access_controls(
+            response_payload.unique_identifier,
+            enums.Operation.MODIFY_ATTRIBUTE
+        )
+        self.assertTrue(managed_object.sensitive)
+
+    def test_modify_attribute_with_unmodifiable_attribute(self):
+        """
+        Test that a KmipError is raised when attempting to modify an
+        unmodifiable attribute.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(1, 4)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        attribute_factory = factory.AttributeFactory()
+
+        args = (
+            payloads.ModifyAttributeRequestPayload(
+                unique_identifier="1",
+                attribute=attribute_factory.create_attribute(
+                    enums.AttributeType.UNIQUE_IDENTIFIER,
+                    "2"
+                )
+            ),
+        )
+        self.assertRaisesRegex(
+            exceptions.KmipError,
+            "The 'Unique Identifier' attribute is read-only and cannot be "
+            "modified.",
+            e._process_modify_attribute,
+            *args
+        )
+
+    def test_modify_attribute_with_multivalued(self):
+        """
+        Test that a ModifyAttribute request can be processed correctly.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(1, 4)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Confirm that the attribute is set to its default value by
+        # fetching the managed object fresh from the database and
+        # checking it.
+        managed_object = e._get_object_with_access_controls(
+            "1",
+            enums.Operation.MODIFY_ATTRIBUTE
+        )
+        self.assertEqual("Symmetric Key", managed_object.names[0])
+
+        payload = payloads.ModifyAttributeRequestPayload(
+            unique_identifier="1",
+            attribute=attribute_factory.create_attribute(
+                enums.AttributeType.NAME,
+                "Modified Name"
+            )
+        )
+
+        response_payload = e._process_modify_attribute(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call(
+            "Processing operation: ModifyAttribute"
+        )
+        self.assertEqual("1", response_payload.unique_identifier)
+        self.assertEqual(
+            "Name",
+            response_payload.attribute.attribute_name.value
+        )
+        self.assertEqual(0, response_payload.attribute.attribute_index.value)
+        self.assertEqual(
+            "Modified Name",
+            response_payload.attribute.attribute_value.name_value.value
+        )
+
+        # Confirm that the attribute was actually set by fetching the
+        # managed object fresh from the database and checking it.
+        managed_object = e._get_object_with_access_controls(
+            response_payload.unique_identifier,
+            enums.Operation.MODIFY_ATTRIBUTE
+        )
+        self.assertEqual("Modified Name", managed_object.names[0])
+
+    def test_modify_attribute_with_multivalued_no_index_match(self):
+        """
+        Test that a KmipError is raised when attempting to modify an attribute
+        based on an index that doesn't exist.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(1, 4)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        attribute_factory = factory.AttributeFactory()
+
+        args = (
+            payloads.ModifyAttributeRequestPayload(
+                unique_identifier="1",
+                attribute=attribute_factory.create_attribute(
+                    enums.AttributeType.NAME,
+                    "Modified Name",
+                    index=1
+                )
+            ),
+        )
+        self.assertRaisesRegex(
+            exceptions.KmipError,
+            "No matching attribute instance could be found for the specified "
+            "attribute index.",
+            e._process_modify_attribute,
+            *args
+        )
+
+    def test_modify_attribute_with_singlevalued_index_specified(self):
+        """
+        Test that a KmipError is raised when attempting to modify a
+        single-valued attribute while also specifying the attribute index.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(1, 4)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        attribute_factory = factory.AttributeFactory()
+
+        args = (
+            payloads.ModifyAttributeRequestPayload(
+                unique_identifier="1",
+                attribute=attribute_factory.create_attribute(
+                    enums.AttributeType.SENSITIVE,
+                    True,
+                    index=0
+                )
+            ),
+        )
+        self.assertRaisesRegex(
+            exceptions.KmipError,
+            "The attribute index cannot be specified for a single-valued "
+            "attribute.",
+            e._process_modify_attribute,
+            *args
+        )
+
+    def test_modify_attribute_with_singlevalued_unset_attr(self):
+        """
+        Test that a KmipError is raised when attempting to modify an
+        unset attribute.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(1, 4)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+        e._get_attributes_from_managed_object = mock.Mock(return_value=[])
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        attribute_factory = factory.AttributeFactory()
+
+        e._set_attribute_on_managed_object(
+            secret,
+            ("Sensitive", primitives.Boolean(None))
+        )
+
+        args = (
+            payloads.ModifyAttributeRequestPayload(
+                unique_identifier="1",
+                attribute=attribute_factory.create_attribute(
+                    enums.AttributeType.SENSITIVE,
+                    True
+                )
+            ),
+        )
+        self.assertRaisesRegex(
+            exceptions.KmipError,
+            "The 'Sensitive' attribute is not set on the managed "
+            "object. It must be set before it can be modified.",
+            e._process_modify_attribute,
+            *args
+        )
+
+    def test_modify_attribute_kmip_2_0(self):
+        """
+        Test that a ModifyAttribute request can be processed correctly with
+        KMIP 2.0 parameters.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        # Confirm that the attribute is set to its default value by
+        # fetching the managed object fresh from the database and
+        # checking it.
+        managed_object = e._get_object_with_access_controls(
+            "1",
+            enums.Operation.MODIFY_ATTRIBUTE
+        )
+        self.assertFalse(managed_object.sensitive)
+
+        payload = payloads.ModifyAttributeRequestPayload(
+            unique_identifier="1",
+            current_attribute=objects.CurrentAttribute(
+                attribute=primitives.Boolean(
+                    False,
+                    tag=enums.Tags.SENSITIVE
+                )
+            ),
+            new_attribute=objects.NewAttribute(
+                attribute=primitives.Boolean(
+                    True,
+                    tag=enums.Tags.SENSITIVE
+                )
+            )
+        )
+
+        response_payload = e._process_modify_attribute(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call(
+            "Processing operation: ModifyAttribute"
+        )
+        self.assertEqual("1", response_payload.unique_identifier)
+        self.assertIsNone(response_payload.attribute)
+
+        # Confirm that the attribute was actually set by fetching the
+        # managed object fresh from the database and checking it.
+        managed_object = e._get_object_with_access_controls(
+            response_payload.unique_identifier,
+            enums.Operation.MODIFY_ATTRIBUTE
+        )
+        self.assertTrue(managed_object.sensitive)
+
+    def test_modify_attribute_kmip_2_0_with_unmodifiable_attribute(self):
+        """
+        Test that a KmipError is raised when attempting to modify an
+        unmodifiable attribute with KMIP 2.0 parameters.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        args = (
+            payloads.ModifyAttributeRequestPayload(
+                unique_identifier="1",
+                current_attribute=objects.CurrentAttribute(
+                    attribute=primitives.TextString(
+                        "1",
+                        tag=enums.Tags.UNIQUE_IDENTIFIER
+                    )
+                ),
+                new_attribute=objects.NewAttribute(
+                    attribute=primitives.TextString(
+                        "2",
+                        tag=enums.Tags.UNIQUE_IDENTIFIER
+                    )
+                )
+            ),
+        )
+        self.assertRaisesRegex(
+            exceptions.KmipError,
+            "The 'Unique Identifier' attribute is read-only and cannot be "
+            "modified.",
+            e._process_modify_attribute,
+            *args
+        )
+
+    def test_modify_attribute_kmip_2_0_with_multivalued(self):
+        """
+        Test that a ModifyAttribute request can be processed correctly with
+        KMIP 2.0 parameters.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        # Confirm that the attribute is set to its default value by
+        # fetching the managed object fresh from the database and
+        # checking it.
+        managed_object = e._get_object_with_access_controls(
+            "1",
+            enums.Operation.MODIFY_ATTRIBUTE
+        )
+        self.assertEqual("Symmetric Key", managed_object.names[0])
+
+        payload = payloads.ModifyAttributeRequestPayload(
+            unique_identifier="1",
+            current_attribute=objects.CurrentAttribute(
+                attribute=attributes.Name(
+                    name_value=attributes.Name.NameValue("Symmetric Key")
+                )
+            ),
+            new_attribute=objects.NewAttribute(
+                attribute=attributes.Name(
+                    name_value=attributes.Name.NameValue("Modified Name")
+                )
+            )
+        )
+
+        response_payload = e._process_modify_attribute(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call(
+            "Processing operation: ModifyAttribute"
+        )
+        self.assertEqual("1", response_payload.unique_identifier)
+        self.assertIsNone(response_payload.attribute)
+
+        # Confirm that the attribute was actually set by fetching the
+        # managed object fresh from the database and checking it.
+        managed_object = e._get_object_with_access_controls(
+            response_payload.unique_identifier,
+            enums.Operation.MODIFY_ATTRIBUTE
+        )
+        self.assertEqual("Modified Name", managed_object.names[0])
+
+    def test_modify_attribute_kmip_2_0_with_multivalued_no_current(self):
+        """
+        Test that a KmipError is raised when attempting to modifyg a
+        multivalued attribute with no current attribute.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        args = (
+            payloads.ModifyAttributeRequestPayload(
+                unique_identifier="1",
+                new_attribute=objects.NewAttribute(
+                    attribute=attributes.Name(
+                        name_value=attributes.Name.NameValue("Modified Name")
+                    )
+                )
+            ),
+        )
+        self.assertRaisesRegex(
+            exceptions.KmipError,
+            "The 'Name' attribute is multivalued so the current attribute "
+            "must be specified.",
+            e._process_modify_attribute,
+            *args
+        )
+
+    def test_modify_attribute_kmip_2_0_with_multivalued_no_attr_match(self):
+        """
+        Test that a KmipError is raised when attempting to modify an
+        non-existent attribute value.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        args = (
+            payloads.ModifyAttributeRequestPayload(
+                unique_identifier="1",
+                current_attribute=objects.CurrentAttribute(
+                    attribute=attributes.Name(
+                        name_value=attributes.Name.NameValue("Invalid Key")
+                    )
+                ),
+                new_attribute=objects.NewAttribute(
+                    attribute=attributes.Name(
+                        name_value=attributes.Name.NameValue("Modified Name")
+                    )
+                )
+            ),
+        )
+        self.assertRaisesRegex(
+            exceptions.KmipError,
+            "The specified current attribute could not be found on the "
+            "managed object.",
+            e._process_modify_attribute,
+            *args
+        )
+
+    def test_modify_attribute_kmip_2_0_with_singlevalued_unset_attr(self):
+        """
+        Test that a KmipError is raised when attempting to modify an
+        unset attribute with KMIP 2.0 parameters.
+        """
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+        e._get_attribute_from_managed_object = mock.Mock(return_value=None)
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._set_attribute_on_managed_object(
+            secret,
+            ("Sensitive", primitives.Boolean(None))
+        )
+
+        args = (
+            payloads.ModifyAttributeRequestPayload(
+                unique_identifier="1",
+                new_attribute=objects.NewAttribute(
+                    attribute=primitives.Boolean(
+                        True,
+                        tag=enums.Tags.SENSITIVE
+                    )
+                )
+            ),
+        )
+        self.assertRaisesRegex(
+            exceptions.KmipError,
+            "The 'Sensitive' attribute is not set on the managed "
+            "object. It must be set before it can be modified.",
+            e._process_modify_attribute,
+            *args
+        )
+
+    def test_modify_attribute_kmip_2_0_with_singlevalued_no_attr_match(self):
+        e = engine.KmipEngine()
+        e._protocol_version = contents.ProtocolVersion(2, 0)
+        e._attribute_policy._version = e._protocol_version
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        secret = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            0,
+            b''
+        )
+
+        e._data_session.add(secret)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        args = (
+            payloads.ModifyAttributeRequestPayload(
+                unique_identifier="1",
+                current_attribute=objects.CurrentAttribute(
+                    attribute=primitives.Boolean(
+                        True,
+                        tag=enums.Tags.SENSITIVE
+                    )
+                ),
+                new_attribute=objects.NewAttribute(
+                    attribute=primitives.Boolean(
+                        False,
+                        tag=enums.Tags.SENSITIVE
+                    )
+                )
+            ),
+        )
+        self.assertRaisesRegex(
+            exceptions.KmipError,
+            "The specified current attribute could not be found on the "
+            "managed object.",
+            e._process_modify_attribute,
+            *args
+        )
 
     def test_register(self):
         """
@@ -3467,11 +5567,11 @@ class TestKmipEngine(testtools.TestCase):
         e._data_session = e._data_store_session_factory()
         e._logger = mock.MagicMock()
 
-        object_type = enums.ObjectType.SPLIT_KEY
+        object_type = enums.ObjectType.TEMPLATE
         payload = payloads.RegisterRequestPayload(object_type=object_type)
 
         args = (payload, )
-        regex = "The SplitKey object type is not supported."
+        regex = "The Template object type is not supported."
         six.assertRaisesRegex(
             self,
             exceptions.InvalidField,
@@ -4236,6 +6336,155 @@ class TestKmipEngine(testtools.TestCase):
             *args
         )
 
+    def test_is_valid_date(self):
+        """
+        Test that object date checking yields the correct results.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        # If the date range isn't fully defined, the value is implicitly valid.
+        self.assertTrue(
+            e._is_valid_date(
+                enums.AttributeType.INITIAL_DATE,
+                1563564520,
+                None,
+                None
+            )
+        )
+        self.assertTrue(
+            e._is_valid_date(
+                enums.AttributeType.INITIAL_DATE,
+                1563564520,
+                None,
+                1563564521
+            )
+        )
+
+        # Verify the value is valid for a fully defined, encompassing range.
+        self.assertTrue(
+            e._is_valid_date(
+                enums.AttributeType.INITIAL_DATE,
+                1563564520,
+                1563564519,
+                1563564521
+            )
+        )
+
+        # Verify the value is valid for a specific date value.
+        self.assertTrue(
+            e._is_valid_date(
+                enums.AttributeType.INITIAL_DATE,
+                1563564520,
+                1563564520,
+                None
+            )
+        )
+
+        # Verify the value is invalid for a specific date value.
+        self.assertFalse(
+            e._is_valid_date(
+                enums.AttributeType.INITIAL_DATE,
+                1563564520,
+                1563564519,
+                None
+            )
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "object's initial date (Fri Jul 19 19:28:40 2019) does not match "
+            "the specified initial date (Fri Jul 19 19:28:39 2019)."
+        )
+        e._logger.reset_mock()
+
+        # Verify the value is invalid below a specific date range.
+        self.assertFalse(
+            e._is_valid_date(
+                enums.AttributeType.INITIAL_DATE,
+                1563564519,
+                1563564520,
+                1563564521
+            )
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "object's initial date (Fri Jul 19 19:28:39 2019) is less than "
+            "the starting initial date (Fri Jul 19 19:28:40 2019)."
+        )
+        e._logger.reset_mock()
+
+        # Verify the value is invalid above a specific date range.
+        self.assertFalse(
+            e._is_valid_date(
+                enums.AttributeType.INITIAL_DATE,
+                1563564521,
+                1563564519,
+                1563564520
+            )
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "object's initial date (Fri Jul 19 19:28:41 2019) is greater than "
+            "the ending initial date (Fri Jul 19 19:28:40 2019)."
+        )
+
+    def test_track_date_attributes(self):
+        """
+        Test date attribute value tracking with a simple dictionary.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        date_values = {}
+
+        # Verify the first date given is considered the starting range value.
+        e._track_date_attributes(
+            enums.AttributeType.INITIAL_DATE,
+            date_values,
+            1563564519
+        )
+        self.assertEqual(1563564519, date_values["start"])
+
+        # Verify the second date given is considered the ending range value.
+        e._track_date_attributes(
+            enums.AttributeType.INITIAL_DATE,
+            date_values,
+            1563564521
+        )
+        self.assertEqual(1563564519, date_values["start"])
+        self.assertEqual(1563564521, date_values["end"])
+
+        # Verify that the third date given triggers an exception.
+        args = (enums.AttributeType.INITIAL_DATE, date_values, 1563564520)
+        six.assertRaisesRegex(
+            self,
+            exceptions.InvalidField,
+            "Too many Initial Date attributes provided. "
+            "Include one for an exact match. "
+            "Include two for a ranged match.",
+            e._track_date_attributes,
+            *args
+        )
+
+        # Verify that a lower second date is interpreted as the new start date.
+        date_values = {}
+        date_values["start"] = 1563564521
+        e._track_date_attributes(
+            enums.AttributeType.INITIAL_DATE,
+            date_values,
+            1563564519
+        )
+        self.assertEqual(1563564519, date_values["start"])
+        self.assertEqual(1563564521, date_values["end"])
+
     def test_locate(self):
         """
         Test that a Locate request can be processed correctly.
@@ -4258,13 +6507,8 @@ class TestKmipEngine(testtools.TestCase):
         e._data_session.commit()
         e._data_session = e._data_store_session_factory()
 
-        e._logger.info.assert_any_call(
-            "Processing operation: Locate"
-        )
-        self.assertEqual(
-           len(response_payload.unique_identifiers),
-           0
-        )
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        self.assertEqual(len(response_payload.unique_identifiers), 0)
 
         # Add the first obj and test the locate
         e._data_session.add(obj_a)
@@ -4279,18 +6523,10 @@ class TestKmipEngine(testtools.TestCase):
         e._data_session.commit()
         e._data_session = e._data_store_session_factory()
 
-        e._logger.info.assert_any_call(
-            "Processing operation: Locate"
-        )
+        e._logger.info.assert_any_call("Processing operation: Locate")
 
-        self.assertEqual(
-           len(response_payload.unique_identifiers),
-           1
-        )
-        self.assertEqual(
-            id_a,
-            response_payload.unique_identifiers[0]
-        )
+        self.assertEqual(len(response_payload.unique_identifiers), 1)
+        self.assertEqual(id_a, response_payload.unique_identifiers[0])
 
         # Add the second obj and test the locate
         e._data_session.add(obj_b)
@@ -4305,22 +6541,109 @@ class TestKmipEngine(testtools.TestCase):
         e._data_session.commit()
         e._data_session = e._data_store_session_factory()
 
-        e._logger.info.assert_any_call(
-            "Processing operation: Locate"
+        e._logger.info.assert_any_call("Processing operation: Locate")
+
+        self.assertEqual(len(response_payload.unique_identifiers), 2)
+        self.assertIn(id_a, response_payload.unique_identifiers)
+        self.assertIn(id_b, response_payload.unique_identifiers)
+
+    def test_locate_with_offset_and_maximum_items(self):
+        """
+        Test locate operation with specified offset and maximum item limits.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
         )
+        obj_a = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
+        )
+        obj_a.initial_date = int(time.time())
+        time.sleep(2)
+        obj_b = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.DES,
+            128,
+            key,
+            name='name2'
+        )
+        obj_b.initial_date = int(time.time())
+        time.sleep(2)
+        obj_c = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name3'
+        )
+        obj_c.initial_date = int(time.time())
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.add(obj_c)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+        id_b = str(obj_b.unique_identifier)
+        id_c = str(obj_c.unique_identifier)
+
+        # Locate all objects.
+        payload = payloads.LocateRequestPayload()
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
 
         self.assertEqual(
-           len(response_payload.unique_identifiers),
-           2
-        )
-        self.assertIn(
-            id_a,
+            [id_c, id_b, id_a],
             response_payload.unique_identifiers
         )
-        self.assertIn(
-            id_b,
-            response_payload.unique_identifiers
+
+        # Locate by skipping the first object and only returning one object.
+        payload = payloads.LocateRequestPayload(
+            offset_items=1,
+            maximum_items=1
         )
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+
+        self.assertEqual([id_b], response_payload.unique_identifiers)
+
+        # Locate by skipping the first two objects.
+        payload = payloads.LocateRequestPayload(offset_items=2)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+
+        self.assertEqual([id_a], response_payload.unique_identifiers)
+
+        # Locate by only returning two objects.
+        payload = payloads.LocateRequestPayload(maximum_items=2)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+
+        self.assertEqual([id_c, id_b], response_payload.unique_identifiers)
 
     def test_locate_with_name(self):
         """
@@ -4333,14 +6656,27 @@ class TestKmipEngine(testtools.TestCase):
         e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
         e._logger = mock.MagicMock()
 
-        key = (b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-               b'\x00\x00\x00\x00\x00')
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        )
         obj_a = pie_objects.SymmetricKey(
-            enums.CryptographicAlgorithm.AES, 128, key, name='name0')
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name0'
+        )
         obj_b = pie_objects.SymmetricKey(
-            enums.CryptographicAlgorithm.DES, 128, key, name='name0')
+            enums.CryptographicAlgorithm.DES,
+            128,
+            key,
+            name='name0'
+        )
         obj_c = pie_objects.SymmetricKey(
-            enums.CryptographicAlgorithm.AES, 128, key, name='name1')
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
+        )
 
         e._data_session.add(obj_a)
         e._data_session.add(obj_b)
@@ -4356,13 +6692,13 @@ class TestKmipEngine(testtools.TestCase):
 
         # Locate the obj with name 'name0'
         attrs = [
-                attribute_factory.create_attribute(
-                    enums.AttributeType.NAME,
-                    attributes.Name.create(
-                        'name0',
-                        enums.NameType.UNINTERPRETED_TEXT_STRING
-                    )
-                ),
+            attribute_factory.create_attribute(
+                enums.AttributeType.NAME,
+                attributes.Name.create(
+                    'name0',
+                    enums.NameType.UNINTERPRETED_TEXT_STRING
+                )
+            )
         ]
 
         payload = payloads.LocateRequestPayload(attributes=attrs)
@@ -4371,32 +6707,21 @@ class TestKmipEngine(testtools.TestCase):
         e._data_session.commit()
         e._data_session = e._data_store_session_factory()
 
-        e._logger.info.assert_any_call(
-            "Processing operation: Locate"
-        )
+        e._logger.info.assert_any_call("Processing operation: Locate")
 
-        self.assertEqual(
-           len(response_payload.unique_identifiers),
-           2
-        )
-        self.assertIn(
-            id_a,
-            response_payload.unique_identifiers
-        )
-        self.assertIn(
-            id_b,
-            response_payload.unique_identifiers
-        )
+        self.assertEqual(len(response_payload.unique_identifiers), 2)
+        self.assertIn(id_a, response_payload.unique_identifiers)
+        self.assertIn(id_b, response_payload.unique_identifiers)
 
         # Locate the obj with name 'name1'
         attrs = [
-                attribute_factory.create_attribute(
-                    enums.AttributeType.NAME,
-                    attributes.Name.create(
-                        'name1',
-                        enums.NameType.UNINTERPRETED_TEXT_STRING
-                    )
-                ),
+            attribute_factory.create_attribute(
+                enums.AttributeType.NAME,
+                attributes.Name.create(
+                    'name1',
+                    enums.NameType.UNINTERPRETED_TEXT_STRING
+                )
+            )
         ]
 
         payload = payloads.LocateRequestPayload(attributes=attrs)
@@ -4405,18 +6730,1171 @@ class TestKmipEngine(testtools.TestCase):
         e._data_session.commit()
         e._data_session = e._data_store_session_factory()
 
-        e._logger.info.assert_any_call(
-            "Processing operation: Locate"
+        e._logger.info.assert_any_call("Processing operation: Locate")
+
+        self.assertEqual(len(response_payload.unique_identifiers), 1)
+        self.assertIn(id_c, response_payload.unique_identifiers)
+
+    def test_locate_with_initial_date(self):
+        """
+        Test the Locate operation when 'Initial Date' attributes are given.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
         )
 
-        self.assertEqual(
-           len(response_payload.unique_identifiers),
-           1
+        obj_a = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
         )
-        self.assertIn(
-            id_c,
-            response_payload.unique_identifiers
+        obj_a.initial_date = int(time.time())
+        obj_a_time_str = time.strftime(
+            "%a %b %-2d %H:%M:%S %Y",
+            time.gmtime(obj_a.initial_date)
         )
+
+        time.sleep(2)
+        mid_time = int(time.time())
+        mid_time_str = time.strftime(
+            "%a %b %-2d %H:%M:%S %Y",
+            time.gmtime(mid_time)
+        )
+        time.sleep(2)
+
+        obj_b = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.DES,
+            128,
+            key,
+            name='name2'
+        )
+        obj_b.initial_date = int(time.time())
+        obj_b_time_str = time.strftime(
+            "%a %b %-2d %H:%M:%S %Y",
+            time.gmtime(obj_b.initial_date)
+        )
+
+        time.sleep(2)
+        end_time = int(time.time())
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+        id_b = str(obj_b.unique_identifier)
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Locate the object with a specific timestamp
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.INITIAL_DATE,
+                obj_a.initial_date
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Failed match: object's initial date ({}) does not match "
+            "the specified initial date ({}).".format(
+                obj_b_time_str,
+                obj_a_time_str
+            )
+        )
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        self.assertEqual(len(response_payload.unique_identifiers), 1)
+        self.assertIn(id_a, response_payload.unique_identifiers)
+
+        # Locate an object with a timestamp range
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.INITIAL_DATE,
+                mid_time
+            ),
+            attribute_factory.create_attribute(
+                enums.AttributeType.INITIAL_DATE,
+                end_time
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Failed match: object's initial date ({}) is less than "
+            "the starting initial date ({}).".format(
+                obj_a_time_str,
+                mid_time_str
+            )
+        )
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_b)
+        )
+        self.assertEqual(len(response_payload.unique_identifiers), 1)
+        self.assertIn(id_b, response_payload.unique_identifiers)
+
+    def test_locate_with_state(self):
+        """
+        Test the Locate operation when the 'State' attribute is given.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        )
+
+        obj_a = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
+        )
+        obj_a.state = enums.State.PRE_ACTIVE
+        obj_b = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.DES,
+            128,
+            key,
+            name='name2'
+        )
+        obj_b.state = enums.State.ACTIVE
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+        id_b = str(obj_b.unique_identifier)
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Locate the object with a specific state
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.STATE,
+                enums.State.PRE_ACTIVE
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified state ({}) does not match "
+            "the object's state ({}).".format(
+                enums.State.PRE_ACTIVE.name,
+                enums.State.ACTIVE.name
+            )
+        )
+        self.assertEqual(len(response_payload.unique_identifiers), 1)
+        self.assertIn(id_a, response_payload.unique_identifiers)
+
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.STATE,
+                enums.State.ACTIVE
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified state ({}) does not match "
+            "the object's state ({}).".format(
+                enums.State.ACTIVE.name,
+                enums.State.PRE_ACTIVE.name
+            )
+        )
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_b)
+        )
+        self.assertEqual(len(response_payload.unique_identifiers), 1)
+        self.assertIn(id_b, response_payload.unique_identifiers)
+
+    def test_locate_with_object_type(self):
+        """
+        Test the Locate operation when the 'Object Type' attribute is given.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        )
+
+        obj_a = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
+        )
+        obj_b = pie_objects.SecretData(
+            key,
+            enums.SecretDataType.PASSWORD
+        )
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+        id_b = str(obj_b.unique_identifier)
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Locate the secret data object based on its type.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.OBJECT_TYPE,
+                enums.ObjectType.SECRET_DATA
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_b)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified object type (SECRET_DATA) does not "
+            "match the object's object type (SYMMETRIC_KEY)."
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_b, response_payload.unique_identifiers)
+
+        # Locate the symmetric key object based on its type.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.OBJECT_TYPE,
+                enums.ObjectType.SYMMETRIC_KEY
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified object type (SYMMETRIC_KEY) does not "
+            "match the object's object type (SECRET_DATA)."
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_a, response_payload.unique_identifiers)
+
+        # Try to locate a non-existent object by its type.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.OBJECT_TYPE,
+                enums.ObjectType.PUBLIC_KEY
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified object type (PUBLIC_KEY) does not "
+            "match the object's object type (SYMMETRIC_KEY)."
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified object type (PUBLIC_KEY) does not "
+            "match the object's object type (SECRET_DATA)."
+        )
+        self.assertEqual(0, len(response_payload.unique_identifiers))
+
+    def test_locate_with_cryptographic_algorithm(self):
+        """
+        Test the Locate operation when the 'Cryptographic Algorithm' attribute
+        is given.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        )
+
+        obj_a = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
+        )
+        obj_b = pie_objects.SecretData(
+            key,
+            enums.SecretDataType.PASSWORD
+        )
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Locate the symmetric key object based on its cryptographic algorithm.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
+                enums.CryptographicAlgorithm.AES
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified attribute (Cryptographic Algorithm) is not "
+            "applicable for the object's object type (SECRET_DATA)."
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_a, response_payload.unique_identifiers)
+
+        # Try to locate a non-existent object based on its cryptographic
+        # algorithm.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
+                enums.CryptographicAlgorithm.RSA
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified cryptographic algorithm (RSA) does not match "
+            "the object's cryptographic algorithm (AES)."
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified attribute (Cryptographic Algorithm) is not "
+            "applicable for the object's object type (SECRET_DATA)."
+        )
+        self.assertEqual(0, len(response_payload.unique_identifiers))
+
+    def test_locate_with_cryptographic_length(self):
+        """
+        Test the Locate operation when the 'Cryptographic Length' attribute
+        is given.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        )
+
+        obj_a = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
+        )
+        obj_b = pie_objects.SecretData(
+            key,
+            enums.SecretDataType.PASSWORD
+        )
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Locate the symmetric key object based on its cryptographic length.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
+                128
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified attribute (Cryptographic Length) is not "
+            "applicable for the object's object type (SECRET_DATA)."
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_a, response_payload.unique_identifiers)
+
+        # Try to locate a non-existent object based on its cryptographic
+        # algorithm.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
+                2048
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified cryptographic length (2048) does not match "
+            "the object's cryptographic length (128)."
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified attribute (Cryptographic Length) is not "
+            "applicable for the object's object type (SECRET_DATA)."
+        )
+        self.assertEqual(0, len(response_payload.unique_identifiers))
+
+    def test_locate_with_cryptographic_usage_masks(self):
+        """
+        Test the Locate operation when 'Cryptographic Usage Mask' values are
+        given.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        )
+
+        obj_a = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
+        )
+        obj_a.cryptographic_usage_masks = [
+            enums.CryptographicUsageMask.EXPORT,
+            enums.CryptographicUsageMask.ENCRYPT,
+            enums.CryptographicUsageMask.DECRYPT
+        ]
+        obj_b = pie_objects.SecretData(
+            key,
+            enums.SecretDataType.PASSWORD
+        )
+        obj_b.cryptographic_usage_masks = [
+            enums.CryptographicUsageMask.EXPORT
+        ]
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+        id_b = str(obj_b.unique_identifier)
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Locate the objects based on their shared cryptographic usage masks.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
+                [enums.CryptographicUsageMask.EXPORT]
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_b)
+        )
+        self.assertEqual(2, len(response_payload.unique_identifiers))
+        self.assertIn(id_a, response_payload.unique_identifiers)
+        self.assertIn(id_b, response_payload.unique_identifiers)
+
+        # Locate the symmetric key based on its unique cryptographic usage
+        # masks.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
+                [
+                    enums.CryptographicUsageMask.ENCRYPT
+                ]
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: the specified cryptographic usage mask (ENCRYPT) "
+            "is not set on the object."
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_a, response_payload.unique_identifiers)
+
+        # Try to locate a non-existent object based on its unique cryptographic
+        # usage masks.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
+                [
+                    enums.CryptographicUsageMask.SIGN
+                ]
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Failed match: the specified cryptographic usage mask (SIGN) "
+            "is not set on the object."
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: the specified cryptographic usage mask (SIGN) "
+            "is not set on the object."
+        )
+        self.assertEqual(0, len(response_payload.unique_identifiers))
+
+    def test_locate_with_certificate_type(self):
+        """
+        Test the Locate operation when the 'Certificate Type' attribute is
+        given.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        )
+
+        obj_a = pie_objects.Certificate(
+            enums.CertificateType.X_509,
+            b'',
+            name='certificate1'
+        )
+        obj_b = pie_objects.SecretData(
+            key,
+            enums.SecretDataType.PASSWORD
+        )
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Locate the certificate object based on its certificate type.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.CERTIFICATE_TYPE,
+                enums.CertificateType.X_509
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified attribute (Certificate Type) is not "
+            "applicable for the object's object type (SECRET_DATA)."
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_a, response_payload.unique_identifiers)
+
+        # Try to locate a non-existent object based on its certificate
+        # type.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.CERTIFICATE_TYPE,
+                enums.CertificateType.PGP
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified certificate type (PGP) does not match "
+            "the object's certificate type (X_509)."
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified attribute (Certificate Type) is not "
+            "applicable for the object's object type (SECRET_DATA)."
+        )
+        self.assertEqual(0, len(response_payload.unique_identifiers))
+
+    def test_locate_with_unique_identifier(self):
+        """
+        Test the Locate operation when the 'Unique Identifier' attribute
+        is given.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        )
+
+        obj_a = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
+        )
+        obj_b = pie_objects.SecretData(
+            key,
+            enums.SecretDataType.PASSWORD
+        )
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+        id_b = str(obj_b.unique_identifier)
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Locate the symmetric key object based on its unique identifier.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.UNIQUE_IDENTIFIER,
+                id_a
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified unique identifier ({}) does not match "
+            "the object's unique identifier ({}).".format(id_a, id_b)
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_a, response_payload.unique_identifiers)
+
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.UNIQUE_IDENTIFIER,
+                id_b
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified unique identifier ({}) does not match "
+            "the object's unique identifier ({}).".format(id_b, id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_b)
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_b, response_payload.unique_identifiers)
+
+        # Try to locate a non-existent object based on its cryptographic
+        # algorithm.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.UNIQUE_IDENTIFIER,
+                "unknown"
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified unique identifier ({}) does not match "
+            "the object's unique identifier ({}).".format("unknown", id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified unique identifier ({}) does not match "
+            "the object's unique identifier ({}).".format("unknown", id_b)
+        )
+        self.assertEqual(0, len(response_payload.unique_identifiers))
+
+    def test_locate_with_operation_policy_name(self):
+        """
+        Test the Locate operation when the 'Operation Policy Name' attribute
+        is given.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        )
+
+        obj_a = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
+        )
+        obj_a.operation_policy_name = "default"
+        obj_b = pie_objects.SecretData(
+            key,
+            enums.SecretDataType.PASSWORD
+        )
+        obj_b.operation_policy_name = "custom"
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+        id_b = str(obj_b.unique_identifier)
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Locate the symmetric key object based on its unique identifier.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.OPERATION_POLICY_NAME,
+                "default"
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified operation policy name (default) does not match "
+            "the object's operation policy name (custom)."
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_a, response_payload.unique_identifiers)
+
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.OPERATION_POLICY_NAME,
+                "custom"
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_b)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified operation policy name (custom) does not match "
+            "the object's operation policy name (default)."
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_b, response_payload.unique_identifiers)
+
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.OPERATION_POLICY_NAME,
+                "unknown"
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified operation policy name (unknown) does not match "
+            "the object's operation policy name (default)."
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified operation policy name (unknown) does not match "
+            "the object's operation policy name (custom)."
+        )
+        self.assertEqual(0, len(response_payload.unique_identifiers))
+
+    def test_locate_with_application_specific_information(self):
+        """
+        Test the Locate operation when the 'Application Specific Information'
+        attribute is given.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        )
+
+        app_specific_info_a = pie_objects.ApplicationSpecificInformation(
+            application_namespace="ssl",
+            application_data="www.example.com"
+        )
+        app_specific_info_b = pie_objects.ApplicationSpecificInformation(
+            application_namespace="ssl",
+            application_data="www.test.com"
+        )
+
+        obj_a = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
+        )
+        obj_a.app_specific_info.append(app_specific_info_a)
+        obj_a.app_specific_info.append(app_specific_info_b)
+        obj_b = pie_objects.SecretData(
+            key,
+            enums.SecretDataType.PASSWORD
+        )
+        obj_b.app_specific_info.append(app_specific_info_a)
+        obj_c = pie_objects.SecretData(
+            key,
+            enums.SecretDataType.PASSWORD
+        )
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.add(obj_c)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+        id_b = str(obj_b.unique_identifier)
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Locate the symmetric key objects based on their shared application
+        # specific information attribute.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.APPLICATION_SPECIFIC_INFORMATION,
+                {
+                    "application_namespace": "ssl",
+                    "application_data": "www.example.com"
+                }
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_b)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified application specific "
+            "information ('ssl', 'www.example.com') does not match any "
+            "of the object's associated application "
+            "specific information attributes."
+        )
+        self.assertEqual(2, len(response_payload.unique_identifiers))
+        self.assertIn(id_a, response_payload.unique_identifiers)
+        self.assertIn(id_b, response_payload.unique_identifiers)
+
+        # Locate a single symmetric key object based on its unique application
+        # specific information attribute.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.APPLICATION_SPECIFIC_INFORMATION,
+                {
+                    "application_namespace": "ssl",
+                    "application_data": "www.test.com"
+                }
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified application specific "
+            "information ('ssl', 'www.test.com') does not match any "
+            "of the object's associated application "
+            "specific information attributes."
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_a, response_payload.unique_identifiers)
+
+    def test_locate_with_object_group(self):
+        """
+        Test the Locate operation when the 'Object Group'
+        attribute is given.
+        """
+        e = engine.KmipEngine()
+        e._data_store = self.engine
+        e._data_store_session_factory = self.session_factory
+        e._data_session = e._data_store_session_factory()
+        e._is_allowed_by_operation_policy = mock.Mock(return_value=True)
+        e._logger = mock.MagicMock()
+
+        key = (
+            b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        )
+
+        object_group_a = pie_objects.ObjectGroup(object_group="Group1")
+        object_group_b = pie_objects.ObjectGroup(object_group="Group2")
+
+        obj_a = pie_objects.SymmetricKey(
+            enums.CryptographicAlgorithm.AES,
+            128,
+            key,
+            name='name1'
+        )
+        obj_a.object_groups.append(object_group_a)
+        obj_b = pie_objects.SecretData(
+            key,
+            enums.SecretDataType.PASSWORD
+        )
+        obj_b.object_groups.append(object_group_a)
+        obj_b.object_groups.append(object_group_b)
+        obj_c = pie_objects.SecretData(
+            key,
+            enums.SecretDataType.PASSWORD
+        )
+
+        e._data_session.add(obj_a)
+        e._data_session.add(obj_b)
+        e._data_session.add(obj_c)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        id_a = str(obj_a.unique_identifier)
+        id_b = str(obj_b.unique_identifier)
+
+        attribute_factory = factory.AttributeFactory()
+
+        # Locate the symmetric key objects based on their shared object group
+        # attribute.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.OBJECT_GROUP,
+                "Group1"
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_a)
+        )
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_b)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified object group ('Group1') does not match any "
+            "of the object's associated object group attributes."
+        )
+        self.assertEqual(2, len(response_payload.unique_identifiers))
+        self.assertIn(id_a, response_payload.unique_identifiers)
+        self.assertIn(id_b, response_payload.unique_identifiers)
+
+        # Locate a single symmetric key object based on its unique object group
+        # attribute.
+        attrs = [
+            attribute_factory.create_attribute(
+                enums.AttributeType.OBJECT_GROUP,
+                "Group2"
+            )
+        ]
+        payload = payloads.LocateRequestPayload(attributes=attrs)
+        e._logger.reset_mock()
+        response_payload = e._process_locate(payload)
+        e._data_session.commit()
+        e._data_session = e._data_store_session_factory()
+
+        e._logger.info.assert_any_call("Processing operation: Locate")
+        e._logger.debug.assert_any_call(
+            "Locate filter matched object: {}".format(id_b)
+        )
+        e._logger.debug.assert_any_call(
+            "Failed match: "
+            "the specified object group ('Group2') does not match any "
+            "of the object's associated object group attributes."
+        )
+        self.assertEqual(1, len(response_payload.unique_identifiers))
+        self.assertIn(id_b, response_payload.unique_identifiers)
 
     def test_get(self):
         """
@@ -6394,82 +9872,80 @@ class TestKmipEngine(testtools.TestCase):
         e._logger = mock.MagicMock()
         e._protocol_version = contents.ProtocolVersion(1, 0)
 
-        payload = payloads.QueryRequestPayload([
-            misc.QueryFunction(enums.QueryFunction.QUERY_OPERATIONS),
-            misc.QueryFunction(enums.QueryFunction.QUERY_OBJECTS),
-            misc.QueryFunction(
-                enums.QueryFunction.QUERY_SERVER_INFORMATION
-            ),
-            misc.QueryFunction(
-                enums.QueryFunction.QUERY_APPLICATION_NAMESPACES
-            ),
-            misc.QueryFunction(enums.QueryFunction.QUERY_EXTENSION_LIST),
-            misc.QueryFunction(enums.QueryFunction.QUERY_EXTENSION_MAP)
-        ])
+        payload = payloads.QueryRequestPayload(
+            query_functions=[
+                enums.QueryFunction.QUERY_OPERATIONS,
+                enums.QueryFunction.QUERY_OBJECTS,
+                enums.QueryFunction.QUERY_SERVER_INFORMATION,
+                enums.QueryFunction.QUERY_APPLICATION_NAMESPACES,
+                enums.QueryFunction.QUERY_EXTENSION_LIST,
+                enums.QueryFunction.QUERY_EXTENSION_MAP
+            ]
+        )
 
         result = e._process_query(payload)
 
         e._logger.info.assert_called_once_with("Processing operation: Query")
         self.assertIsInstance(result, payloads.QueryResponsePayload)
-        self.assertIsNotNone(result.operations)
+        self.assertIsInstance(result.operations, list)
         self.assertEqual(12, len(result.operations))
         self.assertEqual(
             enums.Operation.CREATE,
-            result.operations[0].value
+            result.operations[0]
         )
         self.assertEqual(
             enums.Operation.CREATE_KEY_PAIR,
-            result.operations[1].value
+            result.operations[1]
         )
         self.assertEqual(
             enums.Operation.REGISTER,
-            result.operations[2].value
+            result.operations[2]
         )
         self.assertEqual(
             enums.Operation.DERIVE_KEY,
-            result.operations[3].value
+            result.operations[3]
         )
         self.assertEqual(
             enums.Operation.LOCATE,
-            result.operations[4].value
+            result.operations[4]
         )
         self.assertEqual(
             enums.Operation.GET,
-            result.operations[5].value
+            result.operations[5]
         )
         self.assertEqual(
             enums.Operation.GET_ATTRIBUTES,
-            result.operations[6].value
+            result.operations[6]
         )
         self.assertEqual(
             enums.Operation.GET_ATTRIBUTE_LIST,
-            result.operations[7].value
+            result.operations[7]
         )
         self.assertEqual(
             enums.Operation.ACTIVATE,
-            result.operations[8].value
+            result.operations[8]
         )
         self.assertEqual(
             enums.Operation.REVOKE,
-            result.operations[9].value
+            result.operations[9]
         )
         self.assertEqual(
             enums.Operation.DESTROY,
-            result.operations[10].value
+            result.operations[10]
         )
         self.assertEqual(
             enums.Operation.QUERY,
-            result.operations[11].value
+            result.operations[11]
         )
-        self.assertEqual(list(), result.object_types)
+        self.assertIsNone(result.object_types)
         self.assertIsNotNone(result.vendor_identification)
         self.assertEqual(
             "PyKMIP {0} Software Server".format(kmip.__version__),
-            result.vendor_identification.value
+            result.vendor_identification
         )
         self.assertIsNone(result.server_information)
-        self.assertEqual(list(), result.application_namespaces)
-        self.assertEqual(list(), result.extension_information)
+        self.assertIsNone(result.application_namespaces)
+        self.assertIsNone(result.extension_information)
 
     def test_query_1_1(self):
         """
@@ -6480,86 +9956,84 @@ class TestKmipEngine(testtools.TestCase):
         e._logger = mock.MagicMock()
         e._protocol_version = contents.ProtocolVersion(1, 1)
 
-        payload = payloads.QueryRequestPayload([
-            misc.QueryFunction(enums.QueryFunction.QUERY_OPERATIONS),
-            misc.QueryFunction(enums.QueryFunction.QUERY_OBJECTS),
-            misc.QueryFunction(
-                enums.QueryFunction.QUERY_SERVER_INFORMATION
-            ),
-            misc.QueryFunction(
-                enums.QueryFunction.QUERY_APPLICATION_NAMESPACES
-            ),
-            misc.QueryFunction(enums.QueryFunction.QUERY_EXTENSION_LIST),
-            misc.QueryFunction(enums.QueryFunction.QUERY_EXTENSION_MAP)
-        ])
+        payload = payloads.QueryRequestPayload(
+            query_functions=[
+                enums.QueryFunction.QUERY_OPERATIONS,
+                enums.QueryFunction.QUERY_OBJECTS,
+                enums.QueryFunction.QUERY_SERVER_INFORMATION,
+                enums.QueryFunction.QUERY_APPLICATION_NAMESPACES,
+                enums.QueryFunction.QUERY_EXTENSION_LIST,
+                enums.QueryFunction.QUERY_EXTENSION_MAP
+            ]
+        )
 
         result = e._process_query(payload)
 
         e._logger.info.assert_called_once_with("Processing operation: Query")
         self.assertIsInstance(result, payloads.QueryResponsePayload)
-        self.assertIsNotNone(result.operations)
+        self.assertIsInstance(result.operations, list)
         self.assertEqual(13, len(result.operations))
         self.assertEqual(
             enums.Operation.CREATE,
-            result.operations[0].value
+            result.operations[0]
         )
         self.assertEqual(
             enums.Operation.CREATE_KEY_PAIR,
-            result.operations[1].value
+            result.operations[1]
         )
         self.assertEqual(
             enums.Operation.REGISTER,
-            result.operations[2].value
+            result.operations[2]
         )
         self.assertEqual(
             enums.Operation.DERIVE_KEY,
-            result.operations[3].value
+            result.operations[3]
         )
         self.assertEqual(
             enums.Operation.LOCATE,
-            result.operations[4].value
+            result.operations[4]
         )
         self.assertEqual(
             enums.Operation.GET,
-            result.operations[5].value
+            result.operations[5]
         )
         self.assertEqual(
             enums.Operation.GET_ATTRIBUTES,
-            result.operations[6].value
+            result.operations[6]
         )
         self.assertEqual(
             enums.Operation.GET_ATTRIBUTE_LIST,
-            result.operations[7].value
+            result.operations[7]
         )
         self.assertEqual(
             enums.Operation.ACTIVATE,
-            result.operations[8].value
+            result.operations[8]
         )
         self.assertEqual(
             enums.Operation.REVOKE,
-            result.operations[9].value
+            result.operations[9]
         )
         self.assertEqual(
             enums.Operation.DESTROY,
-            result.operations[10].value
+            result.operations[10]
         )
         self.assertEqual(
             enums.Operation.QUERY,
-            result.operations[11].value
+            result.operations[11]
         )
         self.assertEqual(
             enums.Operation.DISCOVER_VERSIONS,
-            result.operations[12].value
+            result.operations[12]
         )
-        self.assertEqual(list(), result.object_types)
+        self.assertIsNone(result.object_types)
         self.assertIsNotNone(result.vendor_identification)
         self.assertEqual(
             "PyKMIP {0} Software Server".format(kmip.__version__),
-            result.vendor_identification.value
+            result.vendor_identification
         )
         self.assertIsNone(result.server_information)
-        self.assertEqual(list(), result.application_namespaces)
-        self.assertEqual(list(), result.extension_information)
+        self.assertIsNone(result.application_namespaces)
+        self.assertIsNone(result.extension_information)
 
     def test_query_1_2(self):
         """
@@ -6570,106 +10044,104 @@ class TestKmipEngine(testtools.TestCase):
         e._logger = mock.MagicMock()
         e._protocol_version = contents.ProtocolVersion(1, 2)
 
-        payload = payloads.QueryRequestPayload([
-            misc.QueryFunction(enums.QueryFunction.QUERY_OPERATIONS),
-            misc.QueryFunction(enums.QueryFunction.QUERY_OBJECTS),
-            misc.QueryFunction(
-                enums.QueryFunction.QUERY_SERVER_INFORMATION
-            ),
-            misc.QueryFunction(
-                enums.QueryFunction.QUERY_APPLICATION_NAMESPACES
-            ),
-            misc.QueryFunction(enums.QueryFunction.QUERY_EXTENSION_LIST),
-            misc.QueryFunction(enums.QueryFunction.QUERY_EXTENSION_MAP)
-        ])
+        payload = payloads.QueryRequestPayload(
+            query_functions=[
+                enums.QueryFunction.QUERY_OPERATIONS,
+                enums.QueryFunction.QUERY_OBJECTS,
+                enums.QueryFunction.QUERY_SERVER_INFORMATION,
+                enums.QueryFunction.QUERY_APPLICATION_NAMESPACES,
+                enums.QueryFunction.QUERY_EXTENSION_LIST,
+                enums.QueryFunction.QUERY_EXTENSION_MAP
+            ]
+        )
 
         result = e._process_query(payload)
 
         e._logger.info.assert_called_once_with("Processing operation: Query")
         self.assertIsInstance(result, payloads.QueryResponsePayload)
-        self.assertIsNotNone(result.operations)
+        self.assertIsInstance(result.operations, list)
         self.assertEqual(18, len(result.operations))
         self.assertEqual(
             enums.Operation.CREATE,
-            result.operations[0].value
+            result.operations[0]
         )
         self.assertEqual(
             enums.Operation.CREATE_KEY_PAIR,
-            result.operations[1].value
+            result.operations[1]
         )
         self.assertEqual(
             enums.Operation.REGISTER,
-            result.operations[2].value
+            result.operations[2]
         )
         self.assertEqual(
             enums.Operation.DERIVE_KEY,
-            result.operations[3].value
+            result.operations[3]
         )
         self.assertEqual(
             enums.Operation.LOCATE,
-            result.operations[4].value
+            result.operations[4]
         )
         self.assertEqual(
             enums.Operation.GET,
-            result.operations[5].value
+            result.operations[5]
         )
         self.assertEqual(
             enums.Operation.GET_ATTRIBUTES,
-            result.operations[6].value
+            result.operations[6]
         )
         self.assertEqual(
             enums.Operation.GET_ATTRIBUTE_LIST,
-            result.operations[7].value
+            result.operations[7]
         )
         self.assertEqual(
             enums.Operation.ACTIVATE,
-            result.operations[8].value
+            result.operations[8]
         )
         self.assertEqual(
             enums.Operation.REVOKE,
-            result.operations[9].value
+            result.operations[9]
         )
         self.assertEqual(
             enums.Operation.DESTROY,
-            result.operations[10].value
+            result.operations[10]
         )
         self.assertEqual(
             enums.Operation.QUERY,
-            result.operations[11].value
+            result.operations[11]
         )
         self.assertEqual(
             enums.Operation.DISCOVER_VERSIONS,
-            result.operations[12].value
+            result.operations[12]
         )
         self.assertEqual(
             enums.Operation.ENCRYPT,
-            result.operations[13].value
+            result.operations[13]
         )
         self.assertEqual(
             enums.Operation.DECRYPT,
-            result.operations[14].value
+            result.operations[14]
         )
         self.assertEqual(
             enums.Operation.SIGN,
-            result.operations[15].value
+            result.operations[15]
         )
         self.assertEqual(
             enums.Operation.SIGNATURE_VERIFY,
-            result.operations[16].value
+            result.operations[16]
         )
         self.assertEqual(
             enums.Operation.MAC,
-            result.operations[17].value
+            result.operations[17]
         )
-        self.assertEqual(list(), result.object_types)
+        self.assertIsNone(result.object_types)
         self.assertIsNotNone(result.vendor_identification)
         self.assertEqual(
             "PyKMIP {0} Software Server".format(kmip.__version__),
-            result.vendor_identification.value
+            result.vendor_identification
         )
         self.assertIsNone(result.server_information)
-        self.assertEqual(list(), result.application_namespaces)
-        self.assertEqual(list(), result.extension_information)
+        self.assertIsNone(result.application_namespaces)
+        self.assertIsNone(result.extension_information)
 
     def test_discover_versions(self):
         """
@@ -6692,26 +10164,30 @@ class TestKmipEngine(testtools.TestCase):
             payloads.DiscoverVersionsResponsePayload
         )
         self.assertIsNotNone(result.protocol_versions)
-        self.assertEqual(5, len(result.protocol_versions))
+        self.assertEqual(6, len(result.protocol_versions))
         self.assertEqual(
-            contents.ProtocolVersion(1, 4),
+            contents.ProtocolVersion(2, 0),
             result.protocol_versions[0]
         )
         self.assertEqual(
-            contents.ProtocolVersion(1, 3),
+            contents.ProtocolVersion(1, 4),
             result.protocol_versions[1]
         )
         self.assertEqual(
-            contents.ProtocolVersion(1, 2),
+            contents.ProtocolVersion(1, 3),
             result.protocol_versions[2]
         )
         self.assertEqual(
-            contents.ProtocolVersion(1, 1),
+            contents.ProtocolVersion(1, 2),
             result.protocol_versions[3]
         )
         self.assertEqual(
-            contents.ProtocolVersion(1, 0),
+            contents.ProtocolVersion(1, 1),
             result.protocol_versions[4]
+        )
+        self.assertEqual(
+            contents.ProtocolVersion(1, 0),
+            result.protocol_versions[5]
         )
 
         # Test detailed request.
@@ -8125,7 +11601,7 @@ class TestKmipEngine(testtools.TestCase):
 
         attribute_factory = factory.AttributeFactory()
 
-        common_template = objects.CommonTemplateAttribute(
+        common_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.NAME,
@@ -8142,9 +11618,10 @@ class TestKmipEngine(testtools.TestCase):
                     enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
                     2048
                 )
-            ]
+            ],
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
         )
-        public_template = objects.PublicKeyTemplateAttribute(
+        public_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
@@ -8152,9 +11629,10 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.ENCRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
         )
-        private_template = objects.PrivateKeyTemplateAttribute(
+        private_template = objects.TemplateAttribute(
             attributes=[
                 attribute_factory.create_attribute(
                     enums.AttributeType.CRYPTOGRAPHIC_USAGE_MASK,
@@ -8162,7 +11640,8 @@ class TestKmipEngine(testtools.TestCase):
                         enums.CryptographicUsageMask.DECRYPT
                     ]
                 )
-            ]
+            ],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
         )
         payload = payloads.CreateKeyPairRequestPayload(
             common_template,
@@ -8178,9 +11657,9 @@ class TestKmipEngine(testtools.TestCase):
             "Processing operation: CreateKeyPair"
         )
 
-        public_id = response_payload.public_key_uuid.value
+        public_id = response_payload.public_key_unique_identifier
         self.assertEqual('1', public_id)
-        private_id = response_payload.private_key_uuid.value
+        private_id = response_payload.private_key_unique_identifier
         self.assertEqual('2', private_id)
 
         e._logger.reset_mock()

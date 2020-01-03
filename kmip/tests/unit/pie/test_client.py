@@ -24,6 +24,8 @@ from kmip.core import objects as obj
 
 from kmip.core.factories import attributes
 from kmip.core.messages import contents
+from kmip.core.messages import payloads
+from kmip.core import primitives
 from kmip.core.primitives import DateTime
 
 from kmip.services.kmip_client import KMIPProxy
@@ -483,15 +485,17 @@ class TestProxyKmipClient(testtools.TestCase):
             enums.AttributeType.CRYPTOGRAPHIC_LENGTH, length)
 
         attributes = [algorithm_attribute, length_attribute]
-        template = obj.CommonTemplateAttribute(attributes=attributes)
+        template = obj.TemplateAttribute(
+            attributes=attributes,
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
+        )
 
         status = enums.ResultStatus.SUCCESS
         result = results.CreateKeyPairResult(
             contents.ResultStatus(status),
-            public_key_uuid=attr.PublicKeyUniqueIdentifier(
-                'aaaaaaaa-1111-2222-3333-ffffffffffff'),
-            private_key_uuid=attr.PrivateKeyUniqueIdentifier(
-                'ffffffff-3333-2222-1111-aaaaaaaaaaaa'))
+            public_key_uuid="aaaaaaaa-1111-2222-3333-ffffffffffff",
+            private_key_uuid="ffffffff-3333-2222-1111-aaaaaaaaaaaa"
+        )
 
         with ProxyKmipClient() as client:
             client.proxy.create_key_pair.return_value = result
@@ -501,9 +505,11 @@ class TestProxyKmipClient(testtools.TestCase):
                 2048
             )
 
-            kwargs = {'common_template_attribute': template,
-                      'private_key_template_attribute': None,
-                      'public_key_template_attribute': None}
+            kwargs = {
+                "common_template_attribute": template,
+                "private_key_template_attribute": None,
+                "public_key_template_attribute": None
+            }
             client.proxy.create_key_pair.assert_called_with(**kwargs)
             self.assertIsInstance(public_uid, six.string_types)
             self.assertIsInstance(private_uid, six.string_types)
@@ -533,15 +539,17 @@ class TestProxyKmipClient(testtools.TestCase):
             algorithm_attribute,
             length_attribute
         ]
-        template = obj.CommonTemplateAttribute(attributes=pair_attributes)
+        template = obj.TemplateAttribute(
+            attributes=pair_attributes,
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
+        )
 
         status = enums.ResultStatus.SUCCESS
         result = results.CreateKeyPairResult(
             contents.ResultStatus(status),
-            public_key_uuid=attr.PublicKeyUniqueIdentifier(
-                'aaaaaaaa-1111-2222-3333-ffffffffffff'),
-            private_key_uuid=attr.PrivateKeyUniqueIdentifier(
-                'ffffffff-3333-2222-1111-aaaaaaaaaaaa'))
+            public_key_uuid="aaaaaaaa-1111-2222-3333-ffffffffffff",
+            private_key_uuid="ffffffff-3333-2222-1111-aaaaaaaaaaaa"
+        )
 
         with ProxyKmipClient() as client:
             client.proxy.create_key_pair.return_value = result
@@ -552,9 +560,11 @@ class TestProxyKmipClient(testtools.TestCase):
                 operation_policy_name='test'
             )
 
-            kwargs = {'common_template_attribute': template,
-                      'private_key_template_attribute': None,
-                      'public_key_template_attribute': None}
+            kwargs = {
+                "common_template_attribute": template,
+                "private_key_template_attribute": None,
+                "public_key_template_attribute": None
+            }
             client.proxy.create_key_pair.assert_called_with(**kwargs)
 
     @mock.patch('kmip.pie.client.KMIPProxy',
@@ -565,37 +575,44 @@ class TestProxyKmipClient(testtools.TestCase):
         specifically testing that the private / public names are correctly
         sent with the request
         """
-        # Create the template to test the create key pair call
-        algorithm = enums.CryptographicAlgorithm.RSA
-        length = 2048
-        algorithm_attribute = self.attribute_factory.create_attribute(
-            enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM, algorithm)
-        length_attribute = self.attribute_factory.create_attribute(
-            enums.AttributeType.CRYPTOGRAPHIC_LENGTH, length)
-
-        private_name_attribute = self.attribute_factory.create_attribute(
-            enums.AttributeType.NAME, "private")
-        public_name_attribute = self.attribute_factory.create_attribute(
-            enums.AttributeType.NAME, "public")
-
-        pair_attributes = [
-            algorithm_attribute,
-            length_attribute
-        ]
-
-        template = obj.CommonTemplateAttribute(attributes=pair_attributes)
-        private_template = obj.PrivateKeyTemplateAttribute(
-            names=[private_name_attribute])
-        public_template = obj.PublicKeyTemplateAttribute(
-            names=[public_name_attribute])
+        common_template = obj.TemplateAttribute(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_ALGORITHM,
+                    enums.CryptographicAlgorithm.RSA
+                ),
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.CRYPTOGRAPHIC_LENGTH,
+                    2048
+                )
+            ],
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
+        )
+        private_template = obj.TemplateAttribute(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.NAME,
+                    "Test_Private_Key"
+                )
+            ],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
+        )
+        public_template = obj.TemplateAttribute(
+            attributes=[
+                self.attribute_factory.create_attribute(
+                    enums.AttributeType.NAME,
+                    "Test_Public_Key"
+                )
+            ],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
+        )
 
         status = enums.ResultStatus.SUCCESS
         result = results.CreateKeyPairResult(
             contents.ResultStatus(status),
-            public_key_uuid=attr.PublicKeyUniqueIdentifier(
-                'aaaaaaaa-1111-2222-3333-ffffffffffff'),
-            private_key_uuid=attr.PrivateKeyUniqueIdentifier(
-                'ffffffff-3333-2222-1111-aaaaaaaaaaaa'))
+            public_key_uuid="aaaaaaaa-1111-2222-3333-ffffffffffff",
+            private_key_uuid="ffffffff-3333-2222-1111-aaaaaaaaaaaa"
+        )
 
         with ProxyKmipClient() as client:
             client.proxy.create_key_pair.return_value = result
@@ -603,13 +620,15 @@ class TestProxyKmipClient(testtools.TestCase):
             public_uid, private_uid = client.create_key_pair(
                 enums.CryptographicAlgorithm.RSA,
                 2048,
-                public_name="public",
-                private_name="private"
+                public_name="Test_Public_Key",
+                private_name="Test_Private_Key"
             )
 
-            kwargs = {'common_template_attribute': template,
-                      'private_key_template_attribute': private_template,
-                      'public_key_template_attribute': public_template}
+            kwargs = {
+                "common_template_attribute": common_template,
+                "private_key_template_attribute": private_template,
+                "public_key_template_attribute": public_template
+            }
             client.proxy.create_key_pair.assert_called_with(**kwargs)
 
     @mock.patch('kmip.pie.client.KMIPProxy',
@@ -642,19 +661,25 @@ class TestProxyKmipClient(testtools.TestCase):
             length_attribute
         ]
 
-        template = obj.CommonTemplateAttribute(attributes=pair_attributes)
-        private_template = obj.PrivateKeyTemplateAttribute(
-            attributes=[private_usage_mask])
-        public_template = obj.PublicKeyTemplateAttribute(
-            attributes=[public_usage_mask])
+        template = obj.TemplateAttribute(
+            attributes=pair_attributes,
+            tag=enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
+        )
+        private_template = obj.TemplateAttribute(
+            attributes=[private_usage_mask],
+            tag=enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
+        )
+        public_template = obj.TemplateAttribute(
+            attributes=[public_usage_mask],
+            tag=enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
+        )
 
         status = enums.ResultStatus.SUCCESS
         result = results.CreateKeyPairResult(
             contents.ResultStatus(status),
-            public_key_uuid=attr.PublicKeyUniqueIdentifier(
-                'aaaaaaaa-1111-2222-3333-ffffffffffff'),
-            private_key_uuid=attr.PrivateKeyUniqueIdentifier(
-                'ffffffff-3333-2222-1111-aaaaaaaaaaaa'))
+            public_key_uuid="aaaaaaaa-1111-2222-3333-ffffffffffff",
+            private_key_uuid="ffffffff-3333-2222-1111-aaaaaaaaaaaa"
+        )
 
         with ProxyKmipClient() as client:
             client.proxy.create_key_pair.return_value = result
@@ -666,9 +691,11 @@ class TestProxyKmipClient(testtools.TestCase):
                 private_usage_mask=[enums.CryptographicUsageMask.SIGN]
             )
 
-            kwargs = {'common_template_attribute': template,
-                      'private_key_template_attribute': private_template,
-                      'public_key_template_attribute': public_template}
+            kwargs = {
+                "common_template_attribute": template,
+                "private_key_template_attribute": private_template,
+                "public_key_template_attribute": public_template
+            }
             client.proxy.create_key_pair.assert_called_with(**kwargs)
 
     @mock.patch('kmip.pie.client.KMIPProxy',
@@ -732,6 +759,120 @@ class TestProxyKmipClient(testtools.TestCase):
         self.assertRaisesRegex(
             KmipOperationFailure, error_msg,
             client.create_key_pair, *args)
+
+    @mock.patch(
+        "kmip.pie.client.KMIPProxy",
+        mock.MagicMock(spec_set=KMIPProxy)
+    )
+    def test_delete_attribute(self):
+        """
+        Test that the client can delete an attribute.
+        """
+        request_payload = payloads.DeleteAttributeRequestPayload(
+            unique_identifier="1",
+            attribute_name="Object Group",
+            attribute_index=2
+        )
+        response_payload = payloads.DeleteAttributeResponsePayload(
+            unique_identifier="1",
+            attribute=None
+        )
+
+        with ProxyKmipClient() as client:
+            client.proxy.send_request_payload.return_value = response_payload
+
+            unique_identifier, attribute = client.delete_attribute(
+                "1",
+                attribute_name="Object Group",
+                attribute_index=2
+            )
+
+            args = (
+                enums.Operation.DELETE_ATTRIBUTE,
+                request_payload
+            )
+            client.proxy.send_request_payload.assert_called_with(*args)
+            self.assertEqual("1", unique_identifier)
+            self.assertIsNone(attribute)
+
+    @mock.patch(
+        "kmip.pie.client.KMIPProxy",
+        mock.MagicMock(spec_set=KMIPProxy)
+    )
+    def test_set_attribute(self):
+        """
+        Test that the client can set an attribute.
+        """
+        request_payload = payloads.SetAttributeRequestPayload(
+            unique_identifier="1",
+            new_attribute=obj.NewAttribute(
+                attribute=primitives.Boolean(
+                    value=True,
+                    tag=enums.Tags.SENSITIVE
+                )
+            )
+        )
+        response_payload = payloads.SetAttributeResponsePayload(
+            unique_identifier="1"
+        )
+
+        with ProxyKmipClient() as client:
+            client.proxy.send_request_payload.return_value = response_payload
+
+            unique_identifier = client.set_attribute(
+                "1",
+                attribute_name="Sensitive",
+                attribute_value=True
+            )
+
+            args = (
+                enums.Operation.SET_ATTRIBUTE,
+                request_payload
+            )
+            client.proxy.send_request_payload.assert_called_with(*args)
+            self.assertEqual("1", unique_identifier)
+
+    @mock.patch(
+        "kmip.pie.client.KMIPProxy",
+        mock.MagicMock(spec_set=KMIPProxy)
+    )
+    def test_modify_attribute(self):
+        """
+        Test that the client can modify an attribute.
+        """
+        request_payload = payloads.ModifyAttributeRequestPayload(
+            unique_identifier="1",
+            new_attribute=obj.NewAttribute(
+                attribute=primitives.Boolean(
+                    value=True,
+                    tag=enums.Tags.SENSITIVE
+                )
+            )
+        )
+        response_payload = payloads.ModifyAttributeResponsePayload(
+            unique_identifier="1"
+        )
+
+        with ProxyKmipClient() as client:
+            client.proxy.send_request_payload.return_value = response_payload
+
+            unique_identifier, attribute = client.modify_attribute(
+                unique_identifier="1",
+                new_attribute=obj.NewAttribute(
+                    attribute=primitives.Boolean(
+                        value=True,
+                        tag=enums.Tags.SENSITIVE
+                    )
+                )
+            )
+
+            args = (
+                enums.Operation.MODIFY_ATTRIBUTE,
+                request_payload
+            )
+            client.proxy.send_request_payload.assert_called_with(*args)
+            self.assertEqual("1", unique_identifier)
+            self.assertIsNone(attribute)
 
     @mock.patch(
         'kmip.pie.client.KMIPProxy', mock.MagicMock(spec_set=KMIPProxy)

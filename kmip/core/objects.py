@@ -27,7 +27,6 @@ from kmip.core import enums
 from kmip.core.enums import AttributeType
 from kmip.core.enums import Tags
 from kmip.core.enums import Types
-from kmip.core.enums import RevocationReasonCode as RevocationReasonCodeEnum
 from kmip.core import exceptions
 
 from kmip.core.misc import KeyFormatType
@@ -39,6 +38,7 @@ from kmip.core.primitives import ByteString
 from kmip.core.primitives import Integer
 from kmip.core.primitives import Enumeration
 
+from kmip.core import utils
 from kmip.core.utils import BytearrayStream
 
 
@@ -171,6 +171,598 @@ class Attribute(Struct):
     def __ne__(self, other):
         if isinstance(other, Attribute):
             return not self.__eq__(other)
+        else:
+            return NotImplemented
+
+
+class CurrentAttribute(primitives.Struct):
+    """
+    A structure containing a single attribute.
+
+    This is intended for use with KMIP 2.0+.
+
+    Attributes:
+        attribute: An attribute instance.
+    """
+
+    def __init__(self, attribute=None):
+        """
+        Construct a CurrentAttribute structure.
+
+        Args:
+            attribute (struct): An attribute structure of varying type.
+                Defaults to None. Required for read/write.
+        """
+        super(CurrentAttribute, self).__init__(
+            tag=enums.Tags.CURRENT_ATTRIBUTE
+        )
+
+        self._factory = AttributeValueFactory()
+
+        self._attribute = None
+
+        self.attribute = attribute
+
+    @property
+    def attribute(self):
+        if self._attribute:
+            return self._attribute
+        return None
+
+    @attribute.setter
+    def attribute(self, value):
+        if value is None:
+            self._attribute = None
+        elif isinstance(value, primitives.Base):
+            if enums.is_attribute(value.tag):
+                self._attribute = value
+            else:
+                raise TypeError(
+                    "The attribute must be a supported attribute type."
+                )
+        else:
+            raise TypeError(
+                "The attribute must be a Base object, not a {}.".format(
+                    type(value)
+                )
+            )
+
+    def read(self, input_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Read the data stream and decode the CurrentAttribute structure into
+        its parts.
+
+        Args:
+            input_buffer (stream): A data stream containing encoded object
+                data, supporting a read method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be decoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            AttributeNotSupported: Raised when an invalid value is decoded as
+                the attribute from the encoding.
+            InvalidKmipEncoding: Raised if the attribute is missing from the
+                encoding.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the CurrentAttribute structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the CurrentAttribute object.".format(
+                    kmip_version.value
+                )
+            )
+
+        super(CurrentAttribute, self).read(
+            input_buffer,
+            kmip_version=kmip_version
+        )
+        local_buffer = BytearrayStream(input_buffer.read(self.length))
+
+        if len(local_buffer) < 3:
+            raise exceptions.InvalidKmipEncoding(
+                "The CurrentAttribute encoding is missing the attribute field."
+            )
+        tag = struct.unpack('!I', b'\x00' + local_buffer.peek(3))[0]
+        if enums.is_enum_value(enums.Tags, tag):
+            tag = enums.Tags(tag)
+            if enums.is_attribute(tag, kmip_version=kmip_version):
+                value = self._factory.create_attribute_value_by_enum(tag, None)
+                value.read(local_buffer, kmip_version=kmip_version)
+                self._attribute = value
+            else:
+                raise exceptions.AttributeNotSupported(
+                    "Attribute {} is not supported by KMIP {}.".format(
+                        tag.name,
+                        kmip_version.value
+                    )
+                )
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The CurrentAttribute encoding is missing the attribute field."
+            )
+
+        self.is_oversized(local_buffer)
+
+    def write(self, output_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Write the CurrentAttribute structure encoding to the data stream.
+
+        Args:
+            output_buffer (stream): A data stream in which to encode
+                CurrentAttribute structure data, supporting a write method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be encoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            AttributeNotSupported: Raised if an unsupported attribute is
+                found while encoding.
+            InvalidField: Raised when the attribute is unspecified at write
+                time.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the CurrentAttribute object.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the CurrentAttribute object.".format(
+                    kmip_version.value
+                )
+            )
+
+        local_buffer = BytearrayStream()
+
+        if self._attribute:
+            tag = self._attribute.tag
+            if not enums.is_attribute(tag, kmip_version=kmip_version):
+                raise exceptions.AttributeNotSupported(
+                    "Attribute {} is not supported by KMIP {}.".format(
+                        tag.name,
+                        kmip_version.value
+                    )
+                )
+            self._attribute.write(local_buffer, kmip_version=kmip_version)
+        else:
+            raise exceptions.InvalidField(
+                "The CurrentAttribute object is missing the attribute field."
+            )
+
+        self.length = local_buffer.length()
+        super(CurrentAttribute, self).write(
+            output_buffer,
+            kmip_version=kmip_version
+        )
+        output_buffer.write(local_buffer.buffer)
+
+    def __repr__(self):
+        return "CurrentAttribute(attribute={})".format(repr(self.attribute))
+
+    def __str__(self):
+        value = '"attribute": {}'.format(repr(self.attribute))
+        return '{' + value + '}'
+
+    def __eq__(self, other):
+        if not isinstance(other, CurrentAttribute):
+            return NotImplemented
+        elif self.attribute != other.attribute:
+            return False
+        return True
+
+    def __ne__(self, other):
+        if isinstance(other, CurrentAttribute):
+            return not (self == other)
+        else:
+            return NotImplemented
+
+
+class NewAttribute(primitives.Struct):
+    """
+    A structure containing a single attribute.
+
+    This is intended for use with KMIP 2.0+.
+
+    Attributes:
+        attribute: An attribute instance.
+    """
+
+    def __init__(self, attribute=None):
+        """
+        Construct a NewAttribute structure.
+
+        Args:
+            attribute (struct): An attribute structure of varying type.
+                Defaults to None. Required for read/write.
+        """
+        super(NewAttribute, self).__init__(
+            tag=enums.Tags.NEW_ATTRIBUTE
+        )
+
+        self._factory = AttributeValueFactory()
+
+        self._attribute = None
+
+        self.attribute = attribute
+
+    @property
+    def attribute(self):
+        if self._attribute:
+            return self._attribute
+        return None
+
+    @attribute.setter
+    def attribute(self, value):
+        if value is None:
+            self._attribute = None
+        elif isinstance(value, primitives.Base):
+            if enums.is_attribute(value.tag):
+                self._attribute = value
+            else:
+                raise TypeError(
+                    "The attribute must be a supported attribute type."
+                )
+        else:
+            raise TypeError(
+                "The attribute must be a Base object, not a {}.".format(
+                    type(value)
+                )
+            )
+
+    def read(self, input_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Read the data stream and decode the NewAttribute structure into
+        its parts.
+
+        Args:
+            input_buffer (stream): A data stream containing encoded object
+                data, supporting a read method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be decoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            AttributeNotSupported: Raised when an invalid value is decoded as
+                the attribute from the encoding.
+            InvalidKmipEncoding: Raised if the attribute is missing from the
+                encoding.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the CurrentAttribute structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the NewAttribute object.".format(
+                    kmip_version.value
+                )
+            )
+
+        super(NewAttribute, self).read(
+            input_buffer,
+            kmip_version=kmip_version
+        )
+        local_buffer = BytearrayStream(input_buffer.read(self.length))
+
+        if len(local_buffer) < 3:
+            raise exceptions.InvalidKmipEncoding(
+                "The NewAttribute encoding is missing the attribute field."
+            )
+        tag = struct.unpack('!I', b'\x00' + local_buffer.peek(3))[0]
+        if enums.is_enum_value(enums.Tags, tag):
+            tag = enums.Tags(tag)
+            if enums.is_attribute(tag, kmip_version=kmip_version):
+                value = self._factory.create_attribute_value_by_enum(tag, None)
+                value.read(local_buffer, kmip_version=kmip_version)
+                self._attribute = value
+            else:
+                raise exceptions.AttributeNotSupported(
+                    "Attribute {} is not supported by KMIP {}.".format(
+                        tag.name,
+                        kmip_version.value
+                    )
+                )
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The NewAttribute encoding is missing the attribute field."
+            )
+
+        self.is_oversized(local_buffer)
+
+    def write(self, output_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Write the NewAttribute structure encoding to the data stream.
+
+        Args:
+            output_buffer (stream): A data stream in which to encode
+                NewAttribute structure data, supporting a write method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be encoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            AttributeNotSupported: Raised if an unsupported attribute is
+                found while encoding.
+            InvalidField: Raised when the attribute is unspecified at write
+                time.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the NewAttribute object.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the NewAttribute object.".format(
+                    kmip_version.value
+                )
+            )
+
+        local_buffer = BytearrayStream()
+
+        if self._attribute:
+            tag = self._attribute.tag
+            if not enums.is_attribute(tag, kmip_version=kmip_version):
+                raise exceptions.AttributeNotSupported(
+                    "Attribute {} is not supported by KMIP {}.".format(
+                        tag.name,
+                        kmip_version.value
+                    )
+                )
+            self._attribute.write(local_buffer, kmip_version=kmip_version)
+        else:
+            raise exceptions.InvalidField(
+                "The NewAttribute object is missing the attribute field."
+            )
+
+        self.length = local_buffer.length()
+        super(NewAttribute, self).write(
+            output_buffer,
+            kmip_version=kmip_version
+        )
+        output_buffer.write(local_buffer.buffer)
+
+    def __repr__(self):
+        return "NewAttribute(attribute={})".format(repr(self.attribute))
+
+    def __str__(self):
+        value = '"attribute": {}'.format(repr(self.attribute))
+        return '{' + value + '}'
+
+    def __eq__(self, other):
+        if not isinstance(other, NewAttribute):
+            return NotImplemented
+        elif self.attribute != other.attribute:
+            return False
+        return True
+
+    def __ne__(self, other):
+        if isinstance(other, NewAttribute):
+            return not (self == other)
+        else:
+            return NotImplemented
+
+
+class AttributeReference(primitives.Struct):
+    """
+    A structure containing reference information for an attribute.
+
+    This is intended for use with KMIP 2.0+.
+
+    Attributes:
+        vendor_identification: A string identifying the vendor associated
+            with the attribute.
+        attribute_name: A string containing the attribute name.
+    """
+
+    def __init__(self, vendor_identification=None, attribute_name=None):
+        """
+        Construct an AttributeReference structure.
+
+        Args:
+            vendor_identification (string): A string identifying the vendor
+                associated with the attribute. Optional, defaults to None.
+                Required for read/write.
+            attribute_name (string): A string containing the attribute name.
+                Optional, defaults to None. Required for read/write.
+        """
+        super(AttributeReference, self).__init__(
+            tag=enums.Tags.ATTRIBUTE_REFERENCE
+        )
+
+        self._vendor_identification = None
+        self._attribute_name = None
+
+        self.vendor_identification = vendor_identification
+        self.attribute_name = attribute_name
+
+    @property
+    def vendor_identification(self):
+        if self._vendor_identification:
+            return self._vendor_identification.value
+        else:
+            return None
+
+    @vendor_identification.setter
+    def vendor_identification(self, value):
+        if value is None:
+            self._vendor_identification = None
+        elif isinstance(value, six.string_types):
+            self._vendor_identification = primitives.TextString(
+                value,
+                tag=enums.Tags.VENDOR_IDENTIFICATION
+            )
+        else:
+            raise TypeError("Vendor identification must be a string.")
+
+    @property
+    def attribute_name(self):
+        if self._attribute_name:
+            return self._attribute_name.value
+        else:
+            return None
+
+    @attribute_name.setter
+    def attribute_name(self, value):
+        if value is None:
+            self._attribute_name = None
+        elif isinstance(value, six.string_types):
+            self._attribute_name = primitives.TextString(
+                value,
+                tag=enums.Tags.ATTRIBUTE_NAME
+            )
+        else:
+            raise TypeError("Attribute name must be a string.")
+
+    def read(self, input_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Read the data stream and decode the AttributeReference structure into
+        its parts.
+
+        Args:
+            input_buffer (stream): A data stream containing encoded object
+                data, supporting a read method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be decoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidKmipEncoding: Raised if the vendor identification or
+                attribute name is missing from the encoding.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the AttributeReference structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the AttributeReference "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        super(AttributeReference, self).read(
+            input_buffer,
+            kmip_version=kmip_version
+        )
+        local_buffer = BytearrayStream(input_buffer.read(self.length))
+
+        if self.is_tag_next(enums.Tags.VENDOR_IDENTIFICATION, local_buffer):
+            self._vendor_identification = primitives.TextString(
+                tag=enums.Tags.VENDOR_IDENTIFICATION
+            )
+            self._vendor_identification.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The AttributeReference encoding is missing the vendor "
+                "identification string."
+            )
+
+        if self.is_tag_next(enums.Tags.ATTRIBUTE_NAME, local_buffer):
+            self._attribute_name = primitives.TextString(
+                tag=enums.Tags.ATTRIBUTE_NAME
+            )
+            self._attribute_name.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The AttributeReference encoding is missing the attribute "
+                "name string."
+            )
+
+        self.is_oversized(local_buffer)
+
+    def write(self, output_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Write the AttributeReference structure encoding to the data stream.
+
+        Args:
+            output_buffer (stream): A data stream in which to encode
+                Attributes structure data, supporting a write method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be encoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidField: Raised if the vendor identification or attribute name
+                fields are not defined.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the AttributeReference structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the AttributeReference "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        local_buffer = BytearrayStream()
+
+        if self._vendor_identification:
+            self._vendor_identification.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+        else:
+            raise exceptions.InvalidField(
+                "The AttributeReference is missing the vendor identification "
+                "field."
+            )
+
+        if self._attribute_name:
+            self._attribute_name.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+        else:
+            raise exceptions.InvalidField(
+                "The AttributeReference is missing the attribute name field."
+            )
+
+        self.length = local_buffer.length()
+        super(AttributeReference, self).write(
+            output_buffer,
+            kmip_version=kmip_version
+        )
+        output_buffer.write(local_buffer.buffer)
+
+    def __repr__(self):
+        v = "vendor_identification={}".format(
+            '"{}"'.format(
+                self.vendor_identification
+            ) if self.vendor_identification else None
+        )
+        a = "attribute_name={}".format(
+            '"{}"'.format(self.attribute_name) if self.attribute_name else None
+        )
+        values = ", ".join([v, a])
+        return "AttributeReference({})".format(values)
+
+    def __str__(self):
+        v = '"vendor_identification": "{}"'.format(
+            "{}".format(
+                self.vendor_identification
+            ) if self.vendor_identification else None
+        )
+        a = '"attribute_name": "{}"'.format(
+            "{}".format(self.attribute_name) if self.attribute_name else None
+        )
+        values = ", ".join([v, a])
+        return '{' + values + '}'
+
+    def __eq__(self, other):
+        if isinstance(other, AttributeReference):
+            if self.vendor_identification != other.vendor_identification:
+                return False
+            elif self.attribute_name != other.attribute_name:
+                return False
+            else:
+                return True
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        if isinstance(other, AttributeReference):
+            return not (self == other)
         else:
             return NotImplemented
 
@@ -2979,11 +3571,11 @@ def convert_template_attribute_to_attributes(value):
         raise TypeError("Input must be a TemplateAttribute structure.")
 
     tag = enums.Tags.ATTRIBUTES
-    if isinstance(value, CommonTemplateAttribute):
+    if value.tag == enums.Tags.COMMON_TEMPLATE_ATTRIBUTE:
         tag = enums.Tags.COMMON_ATTRIBUTES
-    elif isinstance(value, PrivateKeyTemplateAttribute):
+    elif value.tag == enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE:
         tag = enums.Tags.PRIVATE_KEY_ATTRIBUTES
-    elif isinstance(value, PublicKeyTemplateAttribute):
+    elif value.tag == enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE:
         tag = enums.Tags.PUBLIC_KEY_ATTRIBUTES
 
     attribute_values = []
@@ -3014,14 +3606,18 @@ def convert_attributes_to_template_attribute(value):
             )
         )
 
+    template_tag = enums.Tags.TEMPLATE_ATTRIBUTE
     if value.tag == enums.Tags.COMMON_ATTRIBUTES:
-        return CommonTemplateAttribute(attributes=attribute_structures)
+        template_tag = enums.Tags.COMMON_TEMPLATE_ATTRIBUTE
     elif value.tag == enums.Tags.PRIVATE_KEY_ATTRIBUTES:
-        return PrivateKeyTemplateAttribute(attributes=attribute_structures)
+        template_tag = enums.Tags.PRIVATE_KEY_TEMPLATE_ATTRIBUTE
     elif value.tag == enums.Tags.PUBLIC_KEY_ATTRIBUTES:
-        return PublicKeyTemplateAttribute(attributes=attribute_structures)
-    else:
-        return TemplateAttribute(attributes=attribute_structures)
+        template_tag = enums.Tags.PUBLIC_KEY_TEMPLATE_ATTRIBUTE
+
+    return TemplateAttribute(
+        attributes=attribute_structures,
+        tag=template_tag
+    )
 
 
 # 2.1.9
@@ -3294,9 +3890,9 @@ class MACData(ByteString):
 # 3.31, 9.1.3.2.19
 class RevocationReasonCode(Enumeration):
 
-    def __init__(self, value=RevocationReasonCodeEnum.UNSPECIFIED):
+    def __init__(self, value=enums.RevocationReasonCode.UNSPECIFIED):
         super(RevocationReasonCode, self).__init__(
-            RevocationReasonCodeEnum, value=value,
+            enums.RevocationReasonCode, value=value,
             tag=Tags.REVOCATION_REASON_CODE)
 
 
@@ -3355,7 +3951,7 @@ class RevocationReason(Struct):
         self.revocation_code.read(tstream, kmip_version=kmip_version)
 
         if self.is_tag_next(Tags.REVOCATION_MESSAGE, tstream):
-            self.revocation_message = TextString()
+            self.revocation_message = TextString(tag=Tags.REVOCATION_MESSAGE)
             self.revocation_message.read(tstream, kmip_version=kmip_version)
 
         self.is_oversized(tstream)
@@ -3394,3 +3990,2616 @@ class RevocationReason(Struct):
             if not isinstance(self.revocation_message, TextString):
                 msg = "TextString expect"
                 raise TypeError(msg)
+
+
+class ObjectDefaults(primitives.Struct):
+    """
+    A structure containing default object values used by the server.
+
+    This is intended for use with KMIP 2.0+.
+
+    Attributes:
+        object_type: An ObjectType enumeration identifying the type to which
+            the defaults pertain.
+        attributes: An Attributes structure containing attribute values that
+            are defaults for an object type.
+    """
+
+    def __init__(self, object_type=None, attributes=None):
+        """
+        Construct an ObjectDefaults structure.
+
+        Args:
+            object_type (enum): An ObjectType enumeration identifying the type
+                to which the defaults pertain. Optional, defaults to None.
+                Required for read/write.
+            attributes (structure): An Attributes structure containing
+                attribute values that are defaults for an object type.
+                Optional, defaults to None. Required for read/write.
+        """
+        super(ObjectDefaults, self).__init__(tag=enums.Tags.OBJECT_DEFAULTS)
+
+        self._object_type = None
+        self._attributes = None
+
+        self.object_type = object_type
+        self.attributes = attributes
+
+    @property
+    def object_type(self):
+        if self._object_type:
+            return self._object_type.value
+        else:
+            return None
+
+    @object_type.setter
+    def object_type(self, value):
+        if value is None:
+            self._object_type = None
+        elif isinstance(value, enums.ObjectType):
+            self._object_type = primitives.Enumeration(
+                enums.ObjectType,
+                value=value,
+                tag=enums.Tags.OBJECT_TYPE
+            )
+        else:
+            raise TypeError("Object type must be an ObjectType enumeration.")
+
+    @property
+    def attributes(self):
+        return self._attributes
+
+    @attributes.setter
+    def attributes(self, value):
+        if value is None:
+            self._attributes = None
+        elif isinstance(value, Attributes):
+            self._attributes = value
+        else:
+            raise TypeError("Attributes must be an Attributes structure.")
+
+    def read(self, input_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Read the data encoding the ObjectDefaults structure and decode it into
+        its constituent parts.
+
+        Args:
+            input_buffer (stream): A data stream containing encoded object
+                data, supporting a read method; usually a BytearrayStream
+                object.
+            kmip_version (KMIPVersion): An enumeration defining the KMIP
+                version with which the object will be decoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidKmipEncoding: Raised if the object type or attributes are
+                missing from the encoding.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the ObjectDefaults structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the ObjectDefaults object.".format(
+                    kmip_version.value
+                )
+            )
+
+        super(ObjectDefaults, self).read(
+            input_buffer,
+            kmip_version=kmip_version
+        )
+        local_buffer = utils.BytearrayStream(input_buffer.read(self.length))
+
+        if self.is_tag_next(enums.Tags.OBJECT_TYPE, local_buffer):
+            self._object_type = primitives.Enumeration(
+                enums.ObjectType,
+                tag=enums.Tags.OBJECT_TYPE
+            )
+            self._object_type.read(local_buffer, kmip_version=kmip_version)
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The ObjectDefaults encoding is missing the object type "
+                "enumeration."
+            )
+
+        if self.is_tag_next(enums.Tags.ATTRIBUTES, local_buffer):
+            self._attributes = Attributes()
+            self._attributes.read(local_buffer, kmip_version=kmip_version)
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The ObjectDefaults encoding is missing the attributes "
+                "structure."
+            )
+
+        self.is_oversized(local_buffer)
+
+    def write(self, output_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Write the ObjectDefaults structure encoding to the data stream.
+
+        Args:
+            output_buffer (stream): A data stream in which to encode
+                Attributes structure data, supporting a write method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be encoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidField: Raised if the object type or attributes fields are
+                not defined.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the ObjectDefaults structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the ObjectDefaults object.".format(
+                    kmip_version.value
+                )
+            )
+
+        local_buffer = BytearrayStream()
+
+        if self._object_type:
+            self._object_type.write(local_buffer, kmip_version=kmip_version)
+        else:
+            raise exceptions.InvalidField(
+                "The ObjectDefaults structure is missing the object type "
+                "field."
+            )
+
+        if self._attributes:
+            self._attributes.write(local_buffer, kmip_version=kmip_version)
+        else:
+            raise exceptions.InvalidField(
+                "The ObjectDefaults structure is missing the attributes field."
+            )
+
+        self.length = local_buffer.length()
+        super(ObjectDefaults, self).write(
+            output_buffer,
+            kmip_version=kmip_version
+        )
+        output_buffer.write(local_buffer.buffer)
+
+    def __repr__(self):
+        o = "object_type={}".format(
+            '{}'.format(
+                self.object_type
+            ) if self.object_type else None
+        )
+        a = "attributes={}".format(
+            '{}'.format(repr(self.attributes)) if self.attributes else None
+        )
+        values = ", ".join([o, a])
+        return "ObjectDefaults({})".format(values)
+
+    def __str__(self):
+        o = '"object_type": {}'.format(
+            "{}".format(
+                self.object_type
+            ) if self.object_type else None
+        )
+        a = '"attributes": {}'.format(
+            "{}".format(str(self.attributes)) if self.attributes else None
+        )
+        values = ", ".join([o, a])
+        return '{' + values + '}'
+
+    def __eq__(self, other):
+        if isinstance(other, ObjectDefaults):
+            if self.object_type != other.object_type:
+                return False
+            elif self.attributes != other.attributes:
+                return False
+            else:
+                return True
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        if isinstance(other, ObjectDefaults):
+            return not (self == other)
+        else:
+            return NotImplemented
+
+
+class DefaultsInformation(primitives.Struct):
+    """
+    """
+
+    def __init__(self, object_defaults=None):
+        """
+        """
+        super(DefaultsInformation, self).__init__(
+            tag=enums.Tags.DEFAULTS_INFORMATION
+        )
+
+        self._object_defaults = None
+
+        self.object_defaults = object_defaults
+
+    @property
+    def object_defaults(self):
+        return self._object_defaults
+
+    @object_defaults.setter
+    def object_defaults(self, value):
+        if value is None:
+            self._object_defaults = None
+        elif isinstance(value, list):
+            object_defaults = []
+            for v in value:
+                if not isinstance(v, ObjectDefaults):
+                    raise TypeError(
+                        "Object defaults must be a list of ObjectDefaults "
+                        "structures."
+                    )
+                else:
+                    object_defaults.append(v)
+            self._object_defaults = object_defaults
+        else:
+            raise TypeError(
+                "Object defaults must be a list of ObjectDefaults structures."
+            )
+
+    def read(self, input_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Read the data encoding the DefaultsInformation structure and decode it
+        into its constituent parts.
+
+        Args:
+            input_buffer (stream): A data stream containing encoded object
+                data, supporting a read method; usually a BytearrayStream
+                object.
+            kmip_version (KMIPVersion): An enumeration defining the KMIP
+                version with which the object will be decoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidKmipEncoding: Raised if the object defaults are missing
+                from the encoding.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the DefaultsInformation structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the DefaultsInformation "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        super(DefaultsInformation, self).read(
+            input_buffer,
+            kmip_version=kmip_version
+        )
+        local_buffer = utils.BytearrayStream(input_buffer.read(self.length))
+
+        object_defaults = []
+        while self.is_tag_next(enums.Tags.OBJECT_DEFAULTS, local_buffer):
+            object_default = ObjectDefaults()
+            object_default.read(local_buffer, kmip_version=kmip_version)
+            object_defaults.append(object_default)
+
+        if len(object_defaults) == 0:
+            raise exceptions.InvalidKmipEncoding(
+                "The DefaultsInformation encoding is missing the object "
+                "defaults structure."
+            )
+        else:
+            self._object_defaults = object_defaults
+
+        self.is_oversized(local_buffer)
+
+    def write(self, output_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Write the DefaultsInformation structure encoding to the data stream.
+
+        Args:
+            output_buffer (stream): A data stream in which to encode
+                Attributes structure data, supporting a write method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be encoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidField: Raised if the object defaults field is not defined.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the DefaultsInformation structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the DefaultsInformation "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        local_buffer = BytearrayStream()
+
+        if self._object_defaults:
+            for object_default in self._object_defaults:
+                object_default.write(local_buffer, kmip_version=kmip_version)
+        else:
+            raise exceptions.InvalidField(
+                "The DefaultsInformation structure is missing the object "
+                "defaults field."
+            )
+
+        self.length = local_buffer.length()
+        super(DefaultsInformation, self).write(
+            output_buffer,
+            kmip_version=kmip_version
+        )
+        output_buffer.write(local_buffer.buffer)
+
+    def __repr__(self):
+        d = "object_defaults={}".format(
+            '{}'.format(
+                repr(self.object_defaults)
+            ) if self.object_defaults else None
+        )
+        return "DefaultsInformation({})".format(d)
+
+    def __str__(self):
+        d = '"object_defaults": {}'.format(
+            "[{}]".format(
+                ", ".join([str(x) for x in self.object_defaults])
+            ) if self.object_defaults else None
+        )
+        return '{' + d + '}'
+
+    def __eq__(self, other):
+        if isinstance(other, DefaultsInformation):
+            if self.object_defaults == other.object_defaults:
+                return True
+            else:
+                return False
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        if isinstance(other, DefaultsInformation):
+            return not (self == other)
+        else:
+            return NotImplemented
+
+
+class RNGParameters(primitives.Struct):
+    """
+    A structure containing parameters for a random number generator.
+
+    This is intended for use with KMIP 1.3+.
+
+    Attributes:
+        rng_algorithm: An RNGAlgorithm enumeration identifying the type of
+            random number generator to which the parameters pertain.
+        cryptographic_algorithm: A CryptographicAlgorithm enumeration
+            identifying the cryptographic algorithm used by the RNG.
+        cryptographic_length: An integer specifying the length to be used
+            with the cryptographic algorithm.
+        hashing_algorithm: A HashingAlgorithm enumeration identifying the
+            hashing algorithm used by the RNG.
+        drbg_algorithm: A DRBGAlgorithm enumeration identifying the DRBG
+            algorithm used by the RNG.
+        recommended_curve: A RecommendedCurve enumeration identifying the
+            recommended curve used by the RNG.
+        fips186_variation: A FIPS186Variation enumeration identifying the
+            FIPS186 variation used by the RNG.
+        prediction_resistance: A boolean indicating whether or not
+            prediction resistance is leveraged by the RNG.
+    """
+
+    def __init__(self,
+                 rng_algorithm=None,
+                 cryptographic_algorithm=None,
+                 cryptographic_length=None,
+                 hashing_algorithm=None,
+                 drbg_algorithm=None,
+                 recommended_curve=None,
+                 fips186_variation=None,
+                 prediction_resistance=None):
+        """
+        Construct an RNGParameters structure.
+
+        Args:
+            rng_algorithm (enum): An RNGAlgorithm enumeration identifying the
+                type of random number generator to which the parameters
+                pertain. Optional, defaults to None. Required for read/write.
+            cryptographic_algorithm (enum): A CryptographicAlgorithm
+                enumeration identifying the cryptographic algorithm used by
+                the RNG. Optional, defaults to None.
+            cryptographic_length (int): An integer specifying the length to be
+                used with the cryptographic algorithm. Optional, defaults to
+                None.
+            hashing_algorithm (enum): A HashingAlgorithm enumeration
+                identifying the hashing algorithm used by the RNG. Optional,
+                defaults to None.
+            drbg_algorithm (enum): A DRBGAlgorithm enumeration identifying the
+                DRBG algorithm used by the RNG. Optional, defaults to None.
+            recommended_curve (enum): A RecommendedCurve enumeration
+                identifying the recommended curve used by the RNG. Optional,
+                defaults to None.
+            fips186_variation (enum): A FIPS186Variation enumeration
+                identifying the FIPS186 variation used by the RNG. Optional,
+                defaults to None.
+            prediction_resistance (bool): A boolean indicating whether or not
+                prediction resistance is leveraged by the RNG. Optional,
+                defaults to None.
+        """
+        super(RNGParameters, self).__init__(tag=enums.Tags.RNG_PARAMETERS)
+
+        self._rng_algorithm = None
+        self._cryptographic_algorithm = None
+        self._cryptographic_length = None
+        self._hashing_algorithm = None
+        self._drbg_algorithm = None
+        self._recommended_curve = None
+        self._fips186_variation = None
+        self._prediction_resistance = None
+
+        self.rng_algorithm = rng_algorithm
+        self.cryptographic_algorithm = cryptographic_algorithm
+        self.cryptographic_length = cryptographic_length
+        self.hashing_algorithm = hashing_algorithm
+        self.drbg_algorithm = drbg_algorithm
+        self.recommended_curve = recommended_curve
+        self.fips186_variation = fips186_variation
+        self.prediction_resistance = prediction_resistance
+
+    @property
+    def rng_algorithm(self):
+        return self._rng_algorithm.value if self._rng_algorithm else None
+
+    @rng_algorithm.setter
+    def rng_algorithm(self, value):
+        if value is None:
+            self._rng_algorithm = None
+        elif isinstance(value, enums.RNGAlgorithm):
+            self._rng_algorithm = primitives.Enumeration(
+                enums.RNGAlgorithm,
+                value=value,
+                tag=enums.Tags.RNG_ALGORITHM
+            )
+        else:
+            raise TypeError(
+                "The RNG algorithm must be an RNGAlgorithm enumeration."
+            )
+
+    @property
+    def cryptographic_algorithm(self):
+        if self._cryptographic_algorithm:
+            return self._cryptographic_algorithm.value
+        else:
+            return None
+
+    @cryptographic_algorithm.setter
+    def cryptographic_algorithm(self, value):
+        if value is None:
+            self._cryptographic_algorithm = None
+        elif isinstance(value, enums.CryptographicAlgorithm):
+            self._cryptographic_algorithm = primitives.Enumeration(
+                enums.CryptographicAlgorithm,
+                value=value,
+                tag=enums.Tags.CRYPTOGRAPHIC_ALGORITHM
+            )
+        else:
+            raise TypeError(
+                "The cryptographic algorithm must be a "
+                "CryptographicAlgorithm enumeration."
+            )
+
+    @property
+    def cryptographic_length(self):
+        if self._cryptographic_length:
+            return self._cryptographic_length.value
+        else:
+            return None
+
+    @cryptographic_length.setter
+    def cryptographic_length(self, value):
+        if value is None:
+            self._cryptographic_length = None
+        elif isinstance(value, six.integer_types):
+            self._cryptographic_length = primitives.Integer(
+                value=value,
+                tag=enums.Tags.CRYPTOGRAPHIC_LENGTH
+            )
+        else:
+            raise TypeError("The cryptographic length must be an integer.")
+
+    @property
+    def hashing_algorithm(self):
+        if self._hashing_algorithm:
+            return self._hashing_algorithm.value
+        else:
+            return None
+
+    @hashing_algorithm.setter
+    def hashing_algorithm(self, value):
+        if value is None:
+            self._hashing_algorithm = None
+        elif isinstance(value, enums.HashingAlgorithm):
+            self._hashing_algorithm = primitives.Enumeration(
+                enums.HashingAlgorithm,
+                value=value,
+                tag=enums.Tags.HASHING_ALGORITHM
+            )
+        else:
+            raise TypeError(
+                "The hashing algorithm must be a HashingAlgorithm "
+                "enumeration."
+            )
+
+    @property
+    def drbg_algorithm(self):
+        return self._drbg_algorithm.value if self._drbg_algorithm else None
+
+    @drbg_algorithm.setter
+    def drbg_algorithm(self, value):
+        if value is None:
+            self._drbg_algorithm = None
+        elif isinstance(value, enums.DRBGAlgorithm):
+            self._drbg_algorithm = primitives.Enumeration(
+                enums.DRBGAlgorithm,
+                value=value,
+                tag=enums.Tags.DRBG_ALGORITHM
+            )
+        else:
+            raise TypeError(
+                "The DRBG algorithm must be a DRBGAlgorithm enumeration."
+            )
+
+    @property
+    def recommended_curve(self):
+        if self._recommended_curve:
+            return self._recommended_curve.value
+        else:
+            return None
+
+    @recommended_curve.setter
+    def recommended_curve(self, value):
+        if value is None:
+            self._recommended_curve = None
+        elif isinstance(value, enums.RecommendedCurve):
+            self._recommended_curve = primitives.Enumeration(
+                enums.RecommendedCurve,
+                value=value,
+                tag=enums.Tags.RECOMMENDED_CURVE
+            )
+        else:
+            raise TypeError(
+                "The recommended curve must be a RecommendedCurve "
+                "enumeration."
+            )
+
+    @property
+    def fips186_variation(self):
+        if self._fips186_variation:
+            return self._fips186_variation.value
+        else:
+            return None
+
+    @fips186_variation.setter
+    def fips186_variation(self, value):
+        if value is None:
+            self._fips186_variation = None
+        elif isinstance(value, enums.FIPS186Variation):
+            self._fips186_variation = primitives.Enumeration(
+                enums.FIPS186Variation,
+                value=value,
+                tag=enums.Tags.FIPS186_VARIATION
+            )
+        else:
+            raise TypeError(
+                "The FIPS186 variation must be a FIPS186Variation "
+                "enumeration."
+            )
+
+    @property
+    def prediction_resistance(self):
+        if self._prediction_resistance:
+            return self._prediction_resistance.value
+        else:
+            return None
+
+    @prediction_resistance.setter
+    def prediction_resistance(self, value):
+        if value is None:
+            self._prediction_resistance = None
+        elif isinstance(value, bool):
+            self._prediction_resistance = primitives.Boolean(
+                value=value,
+                tag=enums.Tags.PREDICTION_RESISTANCE
+            )
+        else:
+            raise TypeError("The prediction resistance must be a boolean.")
+
+    def read(self, input_buffer, kmip_version=enums.KMIPVersion.KMIP_1_3):
+        """
+        Read the data encoding the RNGParameters structure and decode it
+        into its constituent parts.
+
+        Args:
+            input_buffer (stream): A data stream containing encoded object
+                data, supporting a read method; usually a BytearrayStream
+                object.
+            kmip_version (KMIPVersion): An enumeration defining the KMIP
+                version with which the object will be decoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidKmipEncoding: Raised if the RNG algorithm is missing from
+                the encoding.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the RNGParameters structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_1_3:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the RNGParameters object.".format(
+                    kmip_version.value
+                )
+            )
+
+        super(RNGParameters, self).read(
+            input_buffer,
+            kmip_version=kmip_version
+        )
+        local_buffer = utils.BytearrayStream(input_buffer.read(self.length))
+
+        if self.is_tag_next(enums.Tags.RNG_ALGORITHM, local_buffer):
+            rng_algorithm = primitives.Enumeration(
+                enums.RNGAlgorithm,
+                tag=enums.Tags.RNG_ALGORITHM
+            )
+            rng_algorithm.read(local_buffer, kmip_version=kmip_version)
+            self._rng_algorithm = rng_algorithm
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The RNGParameters encoding is missing the RNG algorithm."
+            )
+
+        if self.is_tag_next(enums.Tags.CRYPTOGRAPHIC_ALGORITHM, local_buffer):
+            cryptographic_algorithm = primitives.Enumeration(
+                enums.CryptographicAlgorithm,
+                tag=enums.Tags.CRYPTOGRAPHIC_ALGORITHM
+            )
+            cryptographic_algorithm.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._cryptographic_algorithm = cryptographic_algorithm
+
+        if self.is_tag_next(enums.Tags.CRYPTOGRAPHIC_LENGTH, local_buffer):
+            cryptographic_length = primitives.Integer(
+                tag=enums.Tags.CRYPTOGRAPHIC_LENGTH
+            )
+            cryptographic_length.read(local_buffer, kmip_version=kmip_version)
+            self._cryptographic_length = cryptographic_length
+
+        if self.is_tag_next(enums.Tags.HASHING_ALGORITHM, local_buffer):
+            hashing_algorithm = primitives.Enumeration(
+                enums.HashingAlgorithm,
+                tag=enums.Tags.HASHING_ALGORITHM
+            )
+            hashing_algorithm.read(local_buffer, kmip_version=kmip_version)
+            self._hashing_algorithm = hashing_algorithm
+
+        if self.is_tag_next(enums.Tags.DRBG_ALGORITHM, local_buffer):
+            drbg_algorithm = primitives.Enumeration(
+                enums.DRBGAlgorithm,
+                tag=enums.Tags.DRBG_ALGORITHM
+            )
+            drbg_algorithm.read(local_buffer, kmip_version=kmip_version)
+            self._drbg_algorithm = drbg_algorithm
+
+        if self.is_tag_next(enums.Tags.RECOMMENDED_CURVE, local_buffer):
+            recommended_curve = primitives.Enumeration(
+                enums.RecommendedCurve,
+                tag=enums.Tags.RECOMMENDED_CURVE
+            )
+            recommended_curve.read(local_buffer, kmip_version=kmip_version)
+            self._recommended_curve = recommended_curve
+
+        if self.is_tag_next(enums.Tags.FIPS186_VARIATION, local_buffer):
+            fips186_variation = primitives.Enumeration(
+                enums.FIPS186Variation,
+                tag=enums.Tags.FIPS186_VARIATION
+            )
+            fips186_variation.read(local_buffer, kmip_version=kmip_version)
+            self._fips186_variation = fips186_variation
+
+        if self.is_tag_next(enums.Tags.PREDICTION_RESISTANCE, local_buffer):
+            prediction_resistance = primitives.Boolean(
+                tag=enums.Tags.PREDICTION_RESISTANCE
+            )
+            prediction_resistance.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._prediction_resistance = prediction_resistance
+
+        self.is_oversized(local_buffer)
+
+    def write(self, output_buffer, kmip_version=enums.KMIPVersion.KMIP_1_3):
+        """
+        Write the RNGParameters structure encoding to the data stream.
+
+        Args:
+            output_buffer (stream): A data stream in which to encode
+                Attributes structure data, supporting a write method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be encoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidField: Raised if the RNG algorithm field is not defined.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the RNGParameters structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_1_3:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the RNGParameters object.".format(
+                    kmip_version.value
+                )
+            )
+
+        local_buffer = BytearrayStream()
+
+        if self._rng_algorithm:
+            self._rng_algorithm.write(local_buffer, kmip_version=kmip_version)
+        else:
+            raise exceptions.InvalidField(
+                "The RNGParameters structure is missing the RNG algorithm "
+                "field."
+            )
+
+        if self._cryptographic_algorithm:
+            self._cryptographic_algorithm.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._cryptographic_length:
+            self._cryptographic_length.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._hashing_algorithm:
+            self._hashing_algorithm.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._drbg_algorithm:
+            self._drbg_algorithm.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._recommended_curve:
+            self._recommended_curve.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._fips186_variation:
+            self._fips186_variation.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._prediction_resistance:
+            self._prediction_resistance.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        self.length = local_buffer.length()
+        super(RNGParameters, self).write(
+            output_buffer,
+            kmip_version=kmip_version
+        )
+        output_buffer.write(local_buffer.buffer)
+
+    def __repr__(self):
+        a = "rng_algorithm={}".format(self.rng_algorithm)
+        c = "cryptographic_algorithm={}".format(self.cryptographic_algorithm)
+        e = "cryptographic_length={}".format(self.cryptographic_length)
+        h = "hashing_algorithm={}".format(self.hashing_algorithm)
+        d = "drbg_algorithm={}".format(self.drbg_algorithm)
+        r = "recommended_curve={}".format(self.recommended_curve)
+        f = "fips186_variation={}".format(self.fips186_variation)
+        p = "prediction_resistance={}".format(self.prediction_resistance)
+
+        v = ", ".join([a, c, e, h, d, r, f, p])
+
+        return "RNGParameters({})".format(v)
+
+    def __str__(self):
+        a = '"rng_algorithm": {}'.format(self.rng_algorithm)
+        c = '"cryptographic_algorithm": {}'.format(
+            self.cryptographic_algorithm
+        )
+        e = '"cryptographic_length": {}'.format(self.cryptographic_length)
+        h = '"hashing_algorithm": {}'.format(self.hashing_algorithm)
+        d = '"drbg_algorithm": {}'.format(self.drbg_algorithm)
+        r = '"recommended_curve": {}'.format(self.recommended_curve)
+        f = '"fips186_variation": {}'.format(self.fips186_variation)
+        p = '"prediction_resistance": {}'.format(self.prediction_resistance)
+
+        v = ", ".join([a, c, e, h, d, r, f, p])
+
+        return '{' + v + '}'
+
+    def __eq__(self, other):
+        if isinstance(other, RNGParameters):
+            if self.rng_algorithm != other.rng_algorithm:
+                return False
+            elif self.cryptographic_algorithm != other.cryptographic_algorithm:
+                return False
+            elif self.cryptographic_length != other.cryptographic_length:
+                return False
+            elif self.hashing_algorithm != other.hashing_algorithm:
+                return False
+            elif self.drbg_algorithm != other.drbg_algorithm:
+                return False
+            elif self.recommended_curve != other.recommended_curve:
+                return False
+            elif self.fips186_variation != other.fips186_variation:
+                return False
+            elif self.prediction_resistance != other.prediction_resistance:
+                return False
+            else:
+                return True
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        if isinstance(other, RNGParameters):
+            return not (self == other)
+        else:
+            return NotImplemented
+
+
+class ProfileInformation(primitives.Struct):
+    """
+    A structure containing details of supported KMIP profiles.
+
+    This is intended for use with KMIP 1.3+.
+
+    Attributes:
+        profile_name: A ProfileName enumeration identifying the specific
+            profile supported.
+        server_uri: A string specifying a Uniform Resource Identifier that
+            points to the location of the server supporting the profile.
+        server_port: An integer specifying the port number to use when
+            accessing the server supporting the profile.
+    """
+
+    def __init__(self, profile_name=None, server_uri=None, server_port=None):
+        """
+        Construct a ProfileInformation structure.
+
+        Args:
+            profile_name (enum): A ProfileName enumeration identifying the
+                specific profile supported. Optional, defaults to None.
+                Required for read/write.
+            server_uri (string): A string specifying a Uniform Resource
+                Identifier that points to the location of the server
+                supporting the profile. Optional, defaults to None.
+            server_port (int): An integer specifying the port number to use
+                when accessing the server supporting the profile. Optional,
+                defaults to None.
+        """
+        super(ProfileInformation, self).__init__(
+            tag=enums.Tags.PROFILE_INFORMATION
+        )
+
+        self._profile_name = None
+        self._server_uri = None
+        self._server_port = None
+
+        self.profile_name = profile_name
+        self.server_uri = server_uri
+        self.server_port = server_port
+
+    @property
+    def profile_name(self):
+        if self._profile_name:
+            return self._profile_name.value
+        return None
+
+    @profile_name.setter
+    def profile_name(self, value):
+        if value is None:
+            self._profile_name = None
+        elif isinstance(value, enums.ProfileName):
+            self._profile_name = primitives.Enumeration(
+                enums.ProfileName,
+                value=value,
+                tag=enums.Tags.PROFILE_NAME
+            )
+        else:
+            raise TypeError(
+                "The profile name must be a ProfileName enumeration."
+            )
+
+    @property
+    def server_uri(self):
+        if self._server_uri:
+            return self._server_uri.value
+        return None
+
+    @server_uri.setter
+    def server_uri(self, value):
+        if value is None:
+            self._server_uri = None
+        elif isinstance(value, six.string_types):
+            self._server_uri = primitives.TextString(
+                value=value,
+                tag=enums.Tags.SERVER_URI
+            )
+        else:
+            raise TypeError("The server URI must be a string.")
+
+    @property
+    def server_port(self):
+        if self._server_port:
+            return self._server_port.value
+        return None
+
+    @server_port.setter
+    def server_port(self, value):
+        if value is None:
+            self._server_port = None
+        elif isinstance(value, six.integer_types):
+            self._server_port = primitives.Integer(
+                value=value,
+                tag=enums.Tags.SERVER_PORT
+            )
+        else:
+            raise TypeError("The server port must be an integer.")
+
+    def read(self, input_buffer, kmip_version=enums.KMIPVersion.KMIP_1_3):
+        """
+        Read the data encoding the ProfileInformation structure and decode it
+        into its constituent parts.
+
+        Args:
+            input_buffer (stream): A data stream containing encoded object
+                data, supporting a read method; usually a BytearrayStream
+                object.
+            kmip_version (KMIPVersion): An enumeration defining the KMIP
+                version with which the object will be decoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidKmipEncoding: Raised if the profile name is missing from
+                the encoding.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the ProfileInformation structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_1_3:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the ProfileInformation "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        super(ProfileInformation, self).read(
+            input_buffer,
+            kmip_version=kmip_version
+        )
+        local_buffer = utils.BytearrayStream(input_buffer.read(self.length))
+
+        if self.is_tag_next(enums.Tags.PROFILE_NAME, local_buffer):
+            profile_name = primitives.Enumeration(
+                enums.ProfileName,
+                tag=enums.Tags.PROFILE_NAME
+            )
+            profile_name.read(local_buffer, kmip_version=kmip_version)
+            self._profile_name = profile_name
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The ProfileInformation encoding is missing the profile name."
+            )
+
+        if self.is_tag_next(enums.Tags.SERVER_URI, local_buffer):
+            server_uri = primitives.TextString(tag=enums.Tags.SERVER_URI)
+            server_uri.read(local_buffer, kmip_version=kmip_version)
+            self._server_uri = server_uri
+
+        if self.is_tag_next(enums.Tags.SERVER_PORT, local_buffer):
+            server_port = primitives.Integer(tag=enums.Tags.SERVER_PORT)
+            server_port.read(local_buffer, kmip_version=kmip_version)
+            self._server_port = server_port
+
+        self.is_oversized(local_buffer)
+
+    def write(self, output_buffer, kmip_version=enums.KMIPVersion.KMIP_1_3):
+        """
+        Write the ProfileInformation structure encoding to the data stream.
+
+        Args:
+            output_buffer (stream): A data stream in which to encode
+                ProfileInformation structure data, supporting a write method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be encoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidField: Raised if the profile name field is not defined.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the ProfileInformation structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_1_3:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the ProfileInformation "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        local_buffer = BytearrayStream()
+
+        if self._profile_name:
+            self._profile_name.write(local_buffer, kmip_version=kmip_version)
+        else:
+            raise exceptions.InvalidField(
+                "The ProfileInformation structure is missing the profile "
+                "name field."
+            )
+
+        if self._server_uri:
+            self._server_uri.write(local_buffer, kmip_version=kmip_version)
+
+        if self._server_port:
+            self._server_port.write(local_buffer, kmip_version=kmip_version)
+
+        self.length = local_buffer.length()
+        super(ProfileInformation, self).write(
+            output_buffer,
+            kmip_version=kmip_version
+        )
+        output_buffer.write(local_buffer.buffer)
+
+    def __repr__(self):
+        n = "profile_name={}".format(self.profile_name)
+        u = 'server_uri="{}"'.format(self.server_uri)
+        p = "server_port={}".format(self.server_port)
+
+        v = ", ".join([n, u, p])
+
+        return "ProfileInformation({})".format(v)
+
+    def __str__(self):
+        n = '"profile_name": {}'.format(self.profile_name)
+        u = '"server_uri": "{}"'.format(self.server_uri)
+        p = '"server_port": {}'.format(self.server_port)
+
+        v = ", ".join([n, u, p])
+
+        return '{' + v + '}'
+
+    def __eq__(self, other):
+        if isinstance(other, ProfileInformation):
+            if self.profile_name != other.profile_name:
+                return False
+            elif self.server_uri != other.server_uri:
+                return False
+            elif self.server_port != other.server_port:
+                return False
+            else:
+                return True
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        if isinstance(other, ProfileInformation):
+            return not (self == other)
+        else:
+            return NotImplemented
+
+
+class ValidationInformation(primitives.Struct):
+    """
+    A structure containing details of a formal validation.
+
+    This is intended for use with KMIP 1.3+.
+
+    Attributes:
+        validation_authority_type: A ValidationAuthorityType enumeration
+            identifying the type of the validation authority authorizing
+            the validation event.
+        validation_authority_country: A string specifying the country of
+            the validation authority authorizing the validation event.
+        validation_authority_uri: A string specifying a Uniform Resource
+            Identifier that points to the validation authority authorizing
+            the validation event.
+        validation_version_major: An integer identifying the major version
+            number of the validation event.
+        validation_version_minor: An integer identifying the minor version
+            number of the validation event.
+        validation_type: A ValidationType enumeration identifying the type
+            of validation taking place.
+        validation_level: An integer identifying the level of the validation
+            taking place.
+        validation_certificate_identifier: A string identifying the
+            certificate being used for the validation event.
+        validation_certificate_uri: A string specifying a Uniform Resource
+            Identifier that points to the certificate being used for the
+            validation event.
+        validation_vendor_uri: A string specifying a Uniform Resource
+            Identifier that points to the vendor being used for the validation
+            event.
+        validation_profiles: A list of string specifying the profiles in
+            use or associated with the validation event.
+    """
+
+    def __init__(self,
+                 validation_authority_type=None,
+                 validation_authority_country=None,
+                 validation_authority_uri=None,
+                 validation_version_major=None,
+                 validation_version_minor=None,
+                 validation_type=None,
+                 validation_level=None,
+                 validation_certificate_identifier=None,
+                 validation_certificate_uri=None,
+                 validation_vendor_uri=None,
+                 validation_profiles=None):
+        """
+        Construct a ValidationInformation structure.
+
+        Args:
+            validation_authority_type (enum): A ValidationAuthorityType
+                enumeration identifying the type of the validation authority
+                authorizing the validation event. Optional, defaults to None.
+                Required for read/write.
+            validation_authority_country (string): A string specifying the
+                country of the validation authority authorizing the validation
+                event. Optional, defaults to None.
+            validation_authority_uri (string): A string specifying a Uniform
+                Resource Identifier that points to the validation authority
+                authorizing the validation event. Optional, defaults to None.
+            validation_version_major (int): An integer identifying the major
+                version number of the validation event. Optional, defaults to
+                None. Required for read/write.
+            validation_version_minor (int): An integer identifying the minor
+                version number of the validation event. Optional, defaults to
+                None.
+            validation_type (enum): A ValidationType enumeration identifying
+                the type of validation taking place. Optional, defaults to
+                None. Required for read/write.
+            validation_level (int): An integer identifying the level of the
+                validation taking place. Optional, defaults to None. Required
+                for read/write.
+            validation_certificate_identifier (string): A string identifying
+                the certificate being used for the validation event. Optional,
+                defaults to None.
+            validation_certificate_uri (string): A string specifying a Uniform
+                Resource Identifier that points to the certificate being used
+                for the validation event. Optional, defaults to None.
+            validation_vendor_uri (string): A string specifying a Uniform
+                Resource Identifier that points to the vendor being used for
+                the validation event. Optional, defaults to None.
+            validation_profiles (string): A list of string specifying the
+                profiles in use or associated with the validation event.
+                Optional, defaults to None.
+        """
+        super(ValidationInformation, self).__init__(
+            tag=enums.Tags.VALIDATION_INFORMATION
+        )
+
+        self._validation_authority_type = None
+        self._validation_authority_country = None
+        self._validation_authority_uri = None
+        self._validation_version_major = None
+        self._validation_version_minor = None
+        self._validation_type = None
+        self._validation_level = None
+        self._validation_certificate_identifier = None
+        self._validation_certificate_uri = None
+        self._validation_vendor_uri = None
+        self._validation_profiles = None
+
+        self.validation_authority_type = validation_authority_type
+        self.validation_authority_country = validation_authority_country
+        self.validation_authority_uri = validation_authority_uri
+        self.validation_version_major = validation_version_major
+        self.validation_version_minor = validation_version_minor
+        self.validation_type = validation_type
+        self.validation_level = validation_level
+        self.validation_certificate_identifier = \
+            validation_certificate_identifier
+        self.validation_certificate_uri = validation_certificate_uri
+        self.validation_vendor_uri = validation_vendor_uri
+        self.validation_profiles = validation_profiles
+
+    @property
+    def validation_authority_type(self):
+        if self._validation_authority_type:
+            return self._validation_authority_type.value
+        return None
+
+    @validation_authority_type.setter
+    def validation_authority_type(self, value):
+        if value is None:
+            self._validation_authority_type = None
+        elif isinstance(value, enums.ValidationAuthorityType):
+            self._validation_authority_type = primitives.Enumeration(
+                enums.ValidationAuthorityType,
+                value=value,
+                tag=enums.Tags.VALIDATION_AUTHORITY_TYPE
+            )
+        else:
+            raise TypeError(
+                "The validation authority type must be a "
+                "ValidationAuthorityType enumeration."
+            )
+
+    @property
+    def validation_authority_country(self):
+        if self._validation_authority_country:
+            return self._validation_authority_country.value
+        return None
+
+    @validation_authority_country.setter
+    def validation_authority_country(self, value):
+        if value is None:
+            self._validation_authority_country = None
+        elif isinstance(value, six.string_types):
+            self._validation_authority_country = primitives.TextString(
+                value=value,
+                tag=enums.Tags.VALIDATION_AUTHORITY_COUNTRY
+            )
+        else:
+            raise TypeError(
+                "The validation authority country must be a string."
+            )
+
+    @property
+    def validation_authority_uri(self):
+        if self._validation_authority_uri:
+            return self._validation_authority_uri.value
+        return None
+
+    @validation_authority_uri.setter
+    def validation_authority_uri(self, value):
+        if value is None:
+            self._validation_authority_uri = None
+        elif isinstance(value, six.string_types):
+            self._validation_authority_uri = primitives.TextString(
+                value=value,
+                tag=enums.Tags.VALIDATION_AUTHORITY_URI
+            )
+        else:
+            raise TypeError("The validation authority URI must be a string.")
+
+    @property
+    def validation_version_major(self):
+        if self._validation_version_major:
+            return self._validation_version_major.value
+        return None
+
+    @validation_version_major.setter
+    def validation_version_major(self, value):
+        if value is None:
+            self._validation_version_major = None
+        elif isinstance(value, six.integer_types):
+            self._validation_version_major = primitives.Integer(
+                value=value,
+                tag=enums.Tags.VALIDATION_VERSION_MAJOR
+            )
+        else:
+            raise TypeError("The validation version major must be an integer.")
+
+    @property
+    def validation_version_minor(self):
+        if self._validation_version_minor:
+            return self._validation_version_minor.value
+        return None
+
+    @validation_version_minor.setter
+    def validation_version_minor(self, value):
+        if value is None:
+            self._validation_version_minor = None
+        elif isinstance(value, six.integer_types):
+            self._validation_version_minor = primitives.Integer(
+                value=value,
+                tag=enums.Tags.VALIDATION_VERSION_MINOR
+            )
+        else:
+            raise TypeError("The validation version minor must be an integer.")
+
+    @property
+    def validation_type(self):
+        if self._validation_type:
+            return self._validation_type.value
+        return None
+
+    @validation_type.setter
+    def validation_type(self, value):
+        if value is None:
+            self._validation_type = None
+        elif isinstance(value, enums.ValidationType):
+            self._validation_type = primitives.Enumeration(
+                enums.ValidationType,
+                value=value,
+                tag=enums.Tags.VALIDATION_TYPE
+            )
+        else:
+            raise TypeError(
+                "The validation type must be a ValidationType enumeration."
+            )
+
+    @property
+    def validation_level(self):
+        if self._validation_level:
+            return self._validation_level.value
+        return None
+
+    @validation_level.setter
+    def validation_level(self, value):
+        if value is None:
+            self._validation_level = None
+        elif isinstance(value, six.integer_types):
+            self._validation_level = primitives.Integer(
+                value=value,
+                tag=enums.Tags.VALIDATION_LEVEL
+            )
+        else:
+            raise TypeError("The validation level must be an integer.")
+
+    @property
+    def validation_certificate_identifier(self):
+        if self._validation_certificate_identifier:
+            return self._validation_certificate_identifier.value
+        return None
+
+    @validation_certificate_identifier.setter
+    def validation_certificate_identifier(self, value):
+        if value is None:
+            self._validation_certificate_identifier = None
+        elif isinstance(value, six.string_types):
+            self._validation_certificate_identifier = primitives.TextString(
+                value=value,
+                tag=enums.Tags.VALIDATION_CERTIFICATE_IDENTIFIER
+            )
+        else:
+            raise TypeError(
+                "The validation certificate identifier must be a string."
+            )
+
+    @property
+    def validation_certificate_uri(self):
+        if self._validation_certificate_uri:
+            return self._validation_certificate_uri.value
+        return None
+
+    @validation_certificate_uri.setter
+    def validation_certificate_uri(self, value):
+        if value is None:
+            self._validation_certificate_uri = None
+        elif isinstance(value, six.string_types):
+            self._validation_certificate_uri = primitives.TextString(
+                value=value,
+                tag=enums.Tags.VALIDATION_CERTIFICATE_URI
+            )
+        else:
+            raise TypeError("The validation certificate URI must be a string.")
+
+    @property
+    def validation_vendor_uri(self):
+        if self._validation_vendor_uri:
+            return self._validation_vendor_uri.value
+        return None
+
+    @validation_vendor_uri.setter
+    def validation_vendor_uri(self, value):
+        if value is None:
+            self._validation_vendor_uri = None
+        elif isinstance(value, six.string_types):
+            self._validation_vendor_uri = primitives.TextString(
+                value=value,
+                tag=enums.Tags.VALIDATION_VENDOR_URI
+            )
+        else:
+            raise TypeError("The validation vendor URI must be a string.")
+
+    @property
+    def validation_profiles(self):
+        if self._validation_profiles:
+            return [x.value for x in self._validation_profiles]
+        return None
+
+    @validation_profiles.setter
+    def validation_profiles(self, value):
+        if value is None:
+            self._validation_profiles = None
+        elif isinstance(value, list):
+            validation_profiles = []
+            for v in value:
+                if isinstance(v, six.string_types):
+                    validation_profiles.append(
+                        primitives.TextString(
+                            value=v,
+                            tag=enums.Tags.VALIDATION_PROFILE
+                        )
+                    )
+                else:
+                    raise TypeError(
+                        "The validation profiles must be a list of strings."
+                    )
+            self._validation_profiles = validation_profiles
+        else:
+            raise TypeError(
+                "The validation profiles must be a list of strings."
+            )
+
+    def read(self, input_buffer, kmip_version=enums.KMIPVersion.KMIP_1_3):
+        """
+        Read the data encoding the ValidationInformation structure and decode
+        it into its constituent parts.
+
+        Args:
+            input_buffer (stream): A data stream containing encoded object
+                data, supporting a read method; usually a BytearrayStream
+                object.
+            kmip_version (KMIPVersion): An enumeration defining the KMIP
+                version with which the object will be decoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidKmipEncoding: Raised if the validation authority type,
+                validation version major, validation type, and/or validation
+                level are missing from the encoding.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the ValidationInformation structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_1_3:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the ValidationInformation "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        super(ValidationInformation, self).read(
+            input_buffer,
+            kmip_version=kmip_version
+        )
+        local_buffer = utils.BytearrayStream(input_buffer.read(self.length))
+
+        if self.is_tag_next(
+            enums.Tags.VALIDATION_AUTHORITY_TYPE,
+            local_buffer
+        ):
+            validation_authority_type = primitives.Enumeration(
+                enums.ValidationAuthorityType,
+                tag=enums.Tags.VALIDATION_AUTHORITY_TYPE
+            )
+            validation_authority_type.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._validation_authority_type = validation_authority_type
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The ValidationInformation encoding is missing the "
+                "validation authority type."
+            )
+
+        if self.is_tag_next(
+            enums.Tags.VALIDATION_AUTHORITY_COUNTRY,
+            local_buffer
+        ):
+            validation_authority_country = primitives.TextString(
+                tag=enums.Tags.VALIDATION_AUTHORITY_COUNTRY
+            )
+            validation_authority_country.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._validation_authority_country = validation_authority_country
+
+        if self.is_tag_next(enums.Tags.VALIDATION_AUTHORITY_URI, local_buffer):
+            validation_authority_uri = primitives.TextString(
+                tag=enums.Tags.VALIDATION_AUTHORITY_URI
+                )
+            validation_authority_uri.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._validation_authority_uri = validation_authority_uri
+
+        if self.is_tag_next(
+            enums.Tags.VALIDATION_VERSION_MAJOR,
+            local_buffer
+        ):
+            validation_version_major = primitives.Integer(
+                tag=enums.Tags.VALIDATION_VERSION_MAJOR
+            )
+            validation_version_major.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._validation_version_major = validation_version_major
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The ValidationInformation encoding is missing the "
+                "validation version major."
+            )
+
+        if self.is_tag_next(
+            enums.Tags.VALIDATION_VERSION_MINOR,
+            local_buffer
+        ):
+            validation_version_minor = primitives.Integer(
+                tag=enums.Tags.VALIDATION_VERSION_MINOR
+            )
+            validation_version_minor.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._validation_version_minor = validation_version_minor
+
+        if self.is_tag_next(enums.Tags.VALIDATION_TYPE, local_buffer):
+            validation_type = primitives.Enumeration(
+                enums.ValidationType,
+                tag=enums.Tags.VALIDATION_TYPE
+            )
+            validation_type.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._validation_type = validation_type
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The ValidationInformation encoding is missing the "
+                "validation type."
+            )
+
+        if self.is_tag_next(enums.Tags.VALIDATION_LEVEL, local_buffer):
+            validation_level = primitives.Integer(
+                tag=enums.Tags.VALIDATION_LEVEL
+            )
+            validation_level.read(local_buffer, kmip_version=kmip_version)
+            self._validation_level = validation_level
+        else:
+            raise exceptions.InvalidKmipEncoding(
+                "The ValidationInformation encoding is missing the "
+                "validation level."
+            )
+
+        if self.is_tag_next(
+            enums.Tags.VALIDATION_CERTIFICATE_IDENTIFIER,
+            local_buffer
+        ):
+            validation_certificate_identifier = primitives.TextString(
+                tag=enums.Tags.VALIDATION_CERTIFICATE_IDENTIFIER
+            )
+            validation_certificate_identifier.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._validation_certificate_identifier = \
+                validation_certificate_identifier
+
+        if self.is_tag_next(
+            enums.Tags.VALIDATION_CERTIFICATE_URI,
+            local_buffer
+        ):
+            validation_certificate_uri = primitives.TextString(
+                tag=enums.Tags.VALIDATION_CERTIFICATE_URI
+            )
+            validation_certificate_uri.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._validation_certificate_uri = validation_certificate_uri
+
+        if self.is_tag_next(enums.Tags.VALIDATION_VENDOR_URI, local_buffer):
+            validation_vendor_uri = primitives.TextString(
+                tag=enums.Tags.VALIDATION_VENDOR_URI
+            )
+            validation_vendor_uri.read(local_buffer, kmip_version=kmip_version)
+            self._validation_vendor_uri = validation_vendor_uri
+
+        validation_profiles = []
+        while self.is_tag_next(enums.Tags.VALIDATION_PROFILE, local_buffer):
+            validation_profile = primitives.TextString(
+                tag=enums.Tags.VALIDATION_PROFILE
+            )
+            validation_profile.read(local_buffer, kmip_version=kmip_version)
+            validation_profiles.append(validation_profile)
+        self._validation_profiles = validation_profiles
+
+        self.is_oversized(local_buffer)
+
+    def write(self, output_buffer, kmip_version=enums.KMIPVersion.KMIP_1_3):
+        """
+        Write the ValidationInformation structure encoding to the data stream.
+
+        Args:
+            output_buffer (stream): A data stream in which to encode
+                ValidationInformation structure data, supporting a write
+                method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be encoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            InvalidField: Raised if the validation authority type, validation
+                version major, validation type, and/or validation level fields
+                are not defined.
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the ValidationInformation structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_1_3:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the ValidationInformation "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        local_buffer = BytearrayStream()
+
+        if self._validation_authority_type:
+            self._validation_authority_type.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+        else:
+            raise exceptions.InvalidField(
+                "The ValidationInformation structure is missing the "
+                "validation authority type field."
+            )
+
+        if self._validation_authority_country:
+            self._validation_authority_country.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._validation_authority_uri:
+            self._validation_authority_uri.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._validation_version_major:
+            self._validation_version_major.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+        else:
+            raise exceptions.InvalidField(
+                "The ValidationInformation structure is missing the "
+                "validation version major field."
+            )
+
+        if self._validation_version_minor:
+            self._validation_version_minor.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._validation_type:
+            self._validation_type.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+        else:
+            raise exceptions.InvalidField(
+                "The ValidationInformation structure is missing the "
+                "validation type field."
+            )
+
+        if self._validation_level:
+            self._validation_level.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+        else:
+            raise exceptions.InvalidField(
+                "The ValidationInformation structure is missing the "
+                "validation level field."
+            )
+
+        if self._validation_certificate_identifier:
+            self._validation_certificate_identifier.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._validation_certificate_uri:
+            self._validation_certificate_uri.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._validation_vendor_uri:
+            self._validation_vendor_uri.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._validation_profiles:
+            for validation_profile in self._validation_profiles:
+                validation_profile.write(
+                    local_buffer,
+                    kmip_version=kmip_version
+                )
+
+        self.length = local_buffer.length()
+        super(ValidationInformation, self).write(
+            output_buffer,
+            kmip_version=kmip_version
+        )
+        output_buffer.write(local_buffer.buffer)
+
+    def __repr__(self):
+        vat = "validation_authority_type={}".format(
+            self.validation_authority_type
+        )
+        vac = 'validation_authority_country="{}"'.format(
+            self.validation_authority_country
+        )
+        vau = 'validation_authority_uri="{}"'.format(
+            self.validation_authority_uri
+        )
+        vvj = "validation_version_major={}".format(
+            self.validation_version_major
+        )
+        vvn = "validation_version_minor={}".format(
+            self.validation_version_minor
+        )
+        vt = "validation_type={}".format(self.validation_type)
+        vl = "validation_level={}".format(self.validation_level)
+        vci = 'validation_certificate_identifier="{}"'.format(
+            self.validation_certificate_identifier
+        )
+        vcu = 'validation_certificate_uri="{}"'.format(
+            self.validation_certificate_uri
+        )
+        vvu = 'validation_vendor_uri="{}"'.format(
+            self.validation_vendor_uri
+        )
+        vp = 'validation_profiles={}'.format(
+            '[{}]'.format(
+                ", ".join(['"{}"'.format(x) for x in self.validation_profiles])
+            ) if self.validation_profiles else None
+        )
+
+        v = ", ".join([vat, vac, vau, vvj, vvn, vt, vl, vci, vcu, vvu, vp])
+
+        return "ValidationInformation({})".format(v)
+
+    def __str__(self):
+        vat = '"validation_authority_type": {}'.format(
+            self.validation_authority_type
+        )
+        vac = '"validation_authority_country": "{}"'.format(
+            self.validation_authority_country
+        )
+        vau = '"validation_authority_uri": "{}"'.format(
+            self.validation_authority_uri
+        )
+        vvj = '"validation_version_major": {}'.format(
+            self.validation_version_major
+        )
+        vvn = '"validation_version_minor": {}'.format(
+            self.validation_version_minor
+        )
+        vt = '"validation_type": {}'.format(self.validation_type)
+        vl = '"validation_level": {}'.format(self.validation_level)
+        vci = '"validation_certificate_identifier": "{}"'.format(
+            self.validation_certificate_identifier
+        )
+        vcu = '"validation_certificate_uri": "{}"'.format(
+            self.validation_certificate_uri
+        )
+        vvu = '"validation_vendor_uri": "{}"'.format(
+            self.validation_vendor_uri
+        )
+        vp = '"validation_profiles": {}'.format(
+            '[{}]'.format(
+                ', '.join(
+                    ['"{}"'.format(x) for x in self.validation_profiles]
+                )
+            ) if self.validation_profiles else None
+        )
+
+        v = ", ".join([vat, vac, vau, vvj, vvn, vt, vl, vci, vcu, vvu, vp])
+
+        return '{' + v + '}'
+
+    def __eq__(self, other):
+        if isinstance(other, ValidationInformation):
+            if self.validation_authority_type != \
+                    other.validation_authority_type:
+                return False
+            elif self.validation_authority_country != \
+                    other.validation_authority_country:
+                return False
+            elif self.validation_authority_uri != \
+                    other.validation_authority_uri:
+                return False
+            elif self.validation_version_major != \
+                    other.validation_version_major:
+                return False
+            elif self.validation_version_minor != \
+                    other.validation_version_minor:
+                return False
+            elif self.validation_type != other.validation_type:
+                return False
+            elif self.validation_level != other.validation_level:
+                return False
+            elif self.validation_certificate_identifier != \
+                    other.validation_certificate_identifier:
+                return False
+            elif self.validation_certificate_uri != \
+                    other.validation_certificate_uri:
+                return False
+            elif self.validation_vendor_uri != other.validation_vendor_uri:
+                return False
+            elif self.validation_profiles != other.validation_profiles:
+                return False
+            else:
+                return True
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        if isinstance(other, ValidationInformation):
+            return not (self == other)
+        else:
+            return NotImplemented
+
+
+class CapabilityInformation(primitives.Struct):
+    """
+    A structure containing details of supported server capabilities.
+
+    This is intended for use with KMIP 1.3+.
+
+    Attributes:
+        streaming_capability: A boolean flag indicating whether or not
+            the server supports streaming data.
+        asynchronous_capability: A boolean flag indicating whether or not
+            the server supports asynchronous operations.
+        attestation_capability: A boolean flag indicating whether or not
+            the server supports attestation.
+        batch_undo_capability: A boolean flag indicating whether or not
+            the server supports batch undo. Added in KMIP 1.4.
+        batch_continue_capability: A boolean flag indicating whether or not
+            the server supports batch continue. Added in KMIP 1.4.
+        unwrap_mode: An UnwrapMode enumeration identifying the unwrap mode
+            supported by the server.
+        destroy_action: A DestroyAction enumeration identifying the destroy
+            action supported by the server.
+        shredding_algorithm: A ShreddingAlgorithm enumeration identifying
+            the shredding algorithm supported by the server.
+        rng_mode: An RNGMode enumeration identifying the RNG mode supported
+            by the server.
+    """
+
+    def __init__(self,
+                 streaming_capability=None,
+                 asynchronous_capability=None,
+                 attestation_capability=None,
+                 batch_undo_capability=None,
+                 batch_continue_capability=None,
+                 unwrap_mode=None,
+                 destroy_action=None,
+                 shredding_algorithm=None,
+                 rng_mode=None):
+        """
+        Construct a CapabilityInformation structure.
+
+        Args:
+            streaming_capability (bool): A boolean flag indicating whether or
+                not the server supports streaming data. Optional, defaults to
+                None.
+            asynchronous_capability (bool): A boolean flag indicating whether
+                or not the server supports asynchronous operations. Optional,
+                defaults to None.
+            attestation_capability (bool): A boolean flag indicating whether
+                or not the server supports attestation. Optional, defaults to
+                None.
+            batch_undo_capability (bool): A boolean flag indicating whether or
+                not the server supports batch undo. Added in KMIP 1.4.
+                Optional, defaults to None.
+            batch_continue_capability (bool): A boolean flag indicating whether
+                or not the server supports batch continue. Added in KMIP 1.4.
+                Optional, defaults to None.
+            unwrap_mode (enum): An UnwrapMode enumeration identifying the
+                unwrap mode supported by the server. Optional, defaults to
+                None.
+            destroy_action (enum): A DestroyAction enumeration identifying the
+                destroy action supported by the server. Optional, defaults to
+                None.
+            shredding_algorithm (enum): A ShreddingAlgorithm enumeration
+                identifying the shredding algorithm supported by the server.
+                Optional, defaults to None.
+            rng_mode (enum): An RNGMode enumeration identifying the RNG mode
+                supported by the server. Optional, defaults to None.
+        """
+        super(CapabilityInformation, self).__init__(
+            tag=enums.Tags.CAPABILITY_INFORMATION
+        )
+
+        self._streaming_capability = None
+        self._asynchronous_capability = None
+        self._attestation_capability = None
+        self._batch_undo_capability = None
+        self._batch_continue_capability = None
+        self._unwrap_mode = None
+        self._destroy_action = None
+        self._shredding_algorithm = None
+        self._rng_mode = None
+
+        self.streaming_capability = streaming_capability
+        self.asynchronous_capability = asynchronous_capability
+        self.attestation_capability = attestation_capability
+        self.batch_undo_capability = batch_undo_capability
+        self.batch_continue_capability = batch_continue_capability
+        self.unwrap_mode = unwrap_mode
+        self.destroy_action = destroy_action
+        self.shredding_algorithm = shredding_algorithm
+        self.rng_mode = rng_mode
+
+    @property
+    def streaming_capability(self):
+        if self._streaming_capability:
+            return self._streaming_capability.value
+        return None
+
+    @streaming_capability.setter
+    def streaming_capability(self, value):
+        if value is None:
+            self._streaming_capability = None
+        elif isinstance(value, bool):
+            self._streaming_capability = primitives.Boolean(
+                value=value,
+                tag=enums.Tags.STREAMING_CAPABILITY
+            )
+        else:
+            raise TypeError("The streaming capability must be a boolean.")
+
+    @property
+    def asynchronous_capability(self):
+        if self._asynchronous_capability:
+            return self._asynchronous_capability.value
+        return None
+
+    @asynchronous_capability.setter
+    def asynchronous_capability(self, value):
+        if value is None:
+            self._asynchronous_capability = None
+        elif isinstance(value, bool):
+            self._asynchronous_capability = primitives.Boolean(
+                value=value,
+                tag=enums.Tags.ASYNCHRONOUS_CAPABILITY
+            )
+        else:
+            raise TypeError(
+                "The asynchronous capability must be a boolean."
+            )
+
+    @property
+    def attestation_capability(self):
+        if self._attestation_capability:
+            return self._attestation_capability.value
+        return None
+
+    @attestation_capability.setter
+    def attestation_capability(self, value):
+        if value is None:
+            self._attestation_capability = None
+        elif isinstance(value, bool):
+            self._attestation_capability = primitives.Boolean(
+                value=value,
+                tag=enums.Tags.ATTESTATION_CAPABILITY
+            )
+        else:
+            raise TypeError("The attestation capability must be a boolean.")
+
+    @property
+    def batch_undo_capability(self):
+        if self._batch_undo_capability:
+            return self._batch_undo_capability.value
+        return None
+
+    @batch_undo_capability.setter
+    def batch_undo_capability(self, value):
+        if value is None:
+            self._batch_undo_capability = None
+        elif isinstance(value, bool):
+            self._batch_undo_capability = primitives.Boolean(
+                value=value,
+                tag=enums.Tags.BATCH_UNDO_CAPABILITY
+            )
+        else:
+            raise TypeError("The batch undo capability must be a boolean.")
+
+    @property
+    def batch_continue_capability(self):
+        if self._batch_continue_capability:
+            return self._batch_continue_capability.value
+        return None
+
+    @batch_continue_capability.setter
+    def batch_continue_capability(self, value):
+        if value is None:
+            self._batch_continue_capability = None
+        elif isinstance(value, bool):
+            self._batch_continue_capability = primitives.Boolean(
+                value=value,
+                tag=enums.Tags.BATCH_CONTINUE_CAPABILITY
+            )
+        else:
+            raise TypeError(
+                "The batch continue capability must be a boolean."
+            )
+
+    @property
+    def unwrap_mode(self):
+        if self._unwrap_mode:
+            return self._unwrap_mode.value
+        return None
+
+    @unwrap_mode.setter
+    def unwrap_mode(self, value):
+        if value is None:
+            self._unwrap_mode = None
+        elif isinstance(value, enums.UnwrapMode):
+            self._unwrap_mode = primitives.Enumeration(
+                enums.UnwrapMode,
+                value=value,
+                tag=enums.Tags.UNWRAP_MODE
+            )
+        else:
+            raise TypeError(
+                "The unwrap mode must be an UnwrapMode enumeration."
+            )
+
+    @property
+    def destroy_action(self):
+        if self._destroy_action:
+            return self._destroy_action.value
+        return None
+
+    @destroy_action.setter
+    def destroy_action(self, value):
+        if value is None:
+            self._destroy_action = None
+        elif isinstance(value, enums.DestroyAction):
+            self._destroy_action = primitives.Enumeration(
+                enums.DestroyAction,
+                value=value,
+                tag=enums.Tags.DESTROY_ACTION
+            )
+        else:
+            raise TypeError(
+                "The destroy action must be a DestroyAction enumeration."
+            )
+
+    @property
+    def shredding_algorithm(self):
+        if self._shredding_algorithm:
+            return self._shredding_algorithm.value
+        return None
+
+    @shredding_algorithm.setter
+    def shredding_algorithm(self, value):
+        if value is None:
+            self._shredding_algorithm = None
+        elif isinstance(value, enums.ShreddingAlgorithm):
+            self._shredding_algorithm = primitives.Enumeration(
+                enums.ShreddingAlgorithm,
+                value=value,
+                tag=enums.Tags.SHREDDING_ALGORITHM
+            )
+        else:
+            raise TypeError(
+                "The shredding algorithm must be a ShreddingAlgorithm "
+                "enumeration."
+            )
+
+    @property
+    def rng_mode(self):
+        if self._rng_mode:
+            return self._rng_mode.value
+        return None
+
+    @rng_mode.setter
+    def rng_mode(self, value):
+        if value is None:
+            self._rng_mode = None
+        elif isinstance(value, enums.RNGMode):
+            self._rng_mode = primitives.Enumeration(
+                enums.RNGMode,
+                value=value,
+                tag=enums.Tags.RNG_MODE
+            )
+        else:
+            raise TypeError("The RNG mode must be an RNGMode enumeration.")
+
+    def read(self, input_buffer, kmip_version=enums.KMIPVersion.KMIP_1_3):
+        """
+        Read the data encoding the CapabilityInformation structure and decode
+        it into its constituent parts.
+
+        Args:
+            input_buffer (stream): A data stream containing encoded object
+                data, supporting a read method; usually a BytearrayStream
+                object.
+            kmip_version (KMIPVersion): An enumeration defining the KMIP
+                version with which the object will be decoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the CapabilityInformation structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_1_3:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the CapabilityInformation "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        super(CapabilityInformation, self).read(
+            input_buffer,
+            kmip_version=kmip_version
+        )
+        local_buffer = utils.BytearrayStream(input_buffer.read(self.length))
+
+        if self.is_tag_next(enums.Tags.STREAMING_CAPABILITY, local_buffer):
+            streaming_capability = primitives.Boolean(
+                tag=enums.Tags.STREAMING_CAPABILITY
+            )
+            streaming_capability.read(local_buffer, kmip_version=kmip_version)
+            self._streaming_capability = streaming_capability
+
+        if self.is_tag_next(enums.Tags.ASYNCHRONOUS_CAPABILITY, local_buffer):
+            asynchronous_capability = primitives.Boolean(
+                tag=enums.Tags.ASYNCHRONOUS_CAPABILITY
+            )
+            asynchronous_capability.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._asynchronous_capability = asynchronous_capability
+
+        if self.is_tag_next(enums.Tags.ATTESTATION_CAPABILITY, local_buffer):
+            attestation_capability = primitives.Boolean(
+                tag=enums.Tags.ATTESTATION_CAPABILITY
+            )
+            attestation_capability.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            self._attestation_capability = attestation_capability
+
+        if kmip_version >= enums.KMIPVersion.KMIP_1_4:
+            if self.is_tag_next(
+                enums.Tags.BATCH_UNDO_CAPABILITY,
+                local_buffer
+            ):
+                batch_undo_capability = primitives.Boolean(
+                    tag=enums.Tags.BATCH_UNDO_CAPABILITY
+                )
+                batch_undo_capability.read(
+                    local_buffer,
+                    kmip_version=kmip_version
+                )
+                self._batch_continue_capability = batch_undo_capability
+
+            if self.is_tag_next(
+                enums.Tags.BATCH_CONTINUE_CAPABILITY,
+                local_buffer
+            ):
+                batch_continue_capability = primitives.Boolean(
+                    tag=enums.Tags.BATCH_CONTINUE_CAPABILITY
+                )
+                batch_continue_capability.read(
+                    local_buffer,
+                    kmip_version=kmip_version
+                )
+                self._batch_continue_capability = batch_continue_capability
+
+        if self.is_tag_next(enums.Tags.UNWRAP_MODE, local_buffer):
+            unwrap_mode = primitives.Enumeration(
+                enums.UnwrapMode,
+                tag=enums.Tags.UNWRAP_MODE
+            )
+            unwrap_mode.read(local_buffer, kmip_version=kmip_version)
+            self._unwrap_mode = unwrap_mode
+
+        if self.is_tag_next(enums.Tags.DESTROY_ACTION, local_buffer):
+            destroy_action = primitives.Enumeration(
+                enums.DestroyAction,
+                tag=enums.Tags.DESTROY_ACTION
+            )
+            destroy_action.read(local_buffer, kmip_version=kmip_version)
+            self._destroy_action = destroy_action
+
+        if self.is_tag_next(enums.Tags.SHREDDING_ALGORITHM, local_buffer):
+            shredding_algorithm = primitives.Enumeration(
+                enums.ShreddingAlgorithm,
+                tag=enums.Tags.SHREDDING_ALGORITHM
+            )
+            shredding_algorithm.read(local_buffer, kmip_version=kmip_version)
+            self._shredding_algorithm = shredding_algorithm
+
+        if self.is_tag_next(enums.Tags.RNG_MODE, local_buffer):
+            rng_mode = primitives.Enumeration(
+                enums.RNGMode,
+                tag=enums.Tags.RNG_MODE
+            )
+            rng_mode.read(local_buffer, kmip_version=kmip_version)
+            self._rng_mode = rng_mode
+
+        self.is_oversized(local_buffer)
+
+    def write(self, output_buffer, kmip_version=enums.KMIPVersion.KMIP_1_3):
+        """
+        Write the CapabilityInformation structure encoding to the data stream.
+
+        Args:
+            output_buffer (stream): A data stream in which to encode
+                CapabilityInformation structure data, supporting a write
+                method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be encoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the CapabilityInformation structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_1_3:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the CapabilityInformation "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        local_buffer = BytearrayStream()
+
+        if self._streaming_capability:
+            self._streaming_capability.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._asynchronous_capability:
+            self._asynchronous_capability.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._attestation_capability:
+            self._attestation_capability.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if kmip_version >= enums.KMIPVersion.KMIP_1_4:
+            if self._batch_undo_capability:
+                self._batch_undo_capability.write(
+                    local_buffer,
+                    kmip_version=kmip_version
+                )
+
+            if self._batch_continue_capability:
+                self._batch_continue_capability.write(
+                    local_buffer,
+                    kmip_version=kmip_version
+                )
+
+        if self._unwrap_mode:
+            self._unwrap_mode.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._destroy_action:
+            self._destroy_action.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._shredding_algorithm:
+            self._shredding_algorithm.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        if self._rng_mode:
+            self._rng_mode.write(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+
+        self.length = local_buffer.length()
+        super(CapabilityInformation, self).write(
+            output_buffer,
+            kmip_version=kmip_version
+        )
+        output_buffer.write(local_buffer.buffer)
+
+    def __repr__(self):
+        sc = "streaming_capability={}".format(self.streaming_capability)
+        rc = "asynchronous_capability={}".format(self.asynchronous_capability)
+        tc = "attestation_capability={}".format(self.attestation_capability)
+        buc = "batch_undo_capability={}".format(self.batch_undo_capability)
+        bcc = "batch_continue_capability={}".format(
+            self.batch_continue_capability
+        )
+        um = "unwrap_mode={}".format(self.unwrap_mode)
+        da = "destroy_action={}".format(self.destroy_action)
+        sa = "shredding_algorithm={}".format(self.shredding_algorithm)
+        rm = "rng_mode={}".format(self.rng_mode)
+
+        v = ", ".join([sc, rc, tc, buc, bcc, um, da, sa, rm])
+
+        return "CapabilityInformation({})".format(v)
+
+    def __str__(self):
+        sc = '"streaming_capability": {}'.format(self.streaming_capability)
+        rc = '"asynchronous_capability": {}'.format(
+            self.asynchronous_capability
+        )
+        tc = '"attestation_capability": {}'.format(
+            self.attestation_capability
+        )
+        buc = '"batch_undo_capability": {}'.format(self.batch_undo_capability)
+        bcc = '"batch_continue_capability": {}'.format(
+            self.batch_continue_capability
+        )
+        um = '"unwrap_mode": {}'.format(self.unwrap_mode)
+        da = '"destroy_action": {}'.format(self.destroy_action)
+        sa = '"shredding_algorithm": {}'.format(self.shredding_algorithm)
+        rm = '"rng_mode": {}'.format(self.rng_mode)
+
+        v = ", ".join([sc, rc, tc, buc, bcc, um, da, sa, rm])
+
+        return '{' + v + '}'
+
+    def __eq__(self, other):
+        if isinstance(other, CapabilityInformation):
+            if self.streaming_capability != other.streaming_capability:
+                return False
+            elif self.asynchronous_capability != other.asynchronous_capability:
+                return False
+            elif self.attestation_capability != other.attestation_capability:
+                return False
+            elif self.batch_undo_capability != other.batch_undo_capability:
+                return False
+            elif self.batch_continue_capability != \
+                    other.batch_continue_capability:
+                return False
+            elif self.unwrap_mode != other.unwrap_mode:
+                return False
+            elif self.destroy_action != other.destroy_action:
+                return False
+            elif self.shredding_algorithm != other.shredding_algorithm:
+                return False
+            elif self.rng_mode != other.rng_mode:
+                return False
+            else:
+                return True
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        if isinstance(other, CapabilityInformation):
+            return not (self == other)
+        else:
+            return NotImplemented
+
+
+class ProtectionStorageMasks(primitives.Struct):
+    """
+    A structure containing a list of protection storage masks.
+
+    This is intended for use with KMIP 2.0+.
+
+    Attributes:
+        protection_storage_masks: A list of integers representing
+            combined sets of ProtectionStorageMask enumerations detailing
+            the storage protections supported by the server.
+    """
+
+    def __init__(self,
+                 protection_storage_masks=None,
+                 tag=enums.Tags.PROTECTION_STORAGE_MASKS):
+        """
+        Construct a ProtectionStorageMasks structure.
+
+        Args:
+            protection_storage_masks (list): A list of integers representing
+                combined sets of ProtectionStorageMask enumerations detailing
+                the storage protections supported by the server. Optional,
+                defaults to None.
+            tag (enum): A Tags enumeration specifying which type of collection
+                this of protection storage masks this object represents.
+                Optional, defaults to Tags.PROTECTION_STORAGE_MASKS.
+        """
+        super(ProtectionStorageMasks, self).__init__(tag=tag)
+
+        self._protection_storage_masks = None
+
+        self.protection_storage_masks = protection_storage_masks
+
+    @property
+    def protection_storage_masks(self):
+        if self._protection_storage_masks:
+            return [x.value for x in self._protection_storage_masks]
+        return None
+
+    @protection_storage_masks.setter
+    def protection_storage_masks(self, value):
+        if value is None:
+            self._protection_storage_masks = None
+        elif isinstance(value, list):
+            protection_storage_masks = []
+            for x in value:
+                if isinstance(x, six.integer_types):
+                    if enums.is_bit_mask(enums.ProtectionStorageMask, x):
+                        protection_storage_masks.append(
+                            primitives.Integer(
+                                value=x,
+                                tag=enums.Tags.PROTECTION_STORAGE_MASK
+                            )
+                        )
+                    else:
+                        raise TypeError(
+                            "The protection storage masks must be a list of "
+                            "integers representing combinations of "
+                            "ProtectionStorageMask enumerations."
+                        )
+                else:
+                    raise TypeError(
+                        "The protection storage masks must be a list of "
+                        "integers representing combinations of "
+                        "ProtectionStorageMask enumerations."
+                    )
+            self._protection_storage_masks = protection_storage_masks
+        else:
+            raise TypeError(
+                "The protection storage masks must be a list of "
+                "integers representing combinations of "
+                "ProtectionStorageMask enumerations."
+            )
+
+    def read(self, input_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Read the data encoding the ProtectionStorageMasks structure and decode
+        it into its constituent parts.
+
+        Args:
+            input_buffer (stream): A data stream containing encoded object
+                data, supporting a read method; usually a BytearrayStream
+                object.
+            kmip_version (KMIPVersion): An enumeration defining the KMIP
+                version with which the object will be decoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the ProtectionStorageMasks structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the ProtectionStorageMasks "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        super(ProtectionStorageMasks, self).read(
+            input_buffer,
+            kmip_version=kmip_version
+        )
+        local_buffer = utils.BytearrayStream(input_buffer.read(self.length))
+
+        protection_storage_masks = []
+        while self.is_tag_next(
+            enums.Tags.PROTECTION_STORAGE_MASK,
+            local_buffer
+        ):
+            protection_storage_mask = primitives.Integer(
+                tag=enums.Tags.PROTECTION_STORAGE_MASK
+            )
+            protection_storage_mask.read(
+                local_buffer,
+                kmip_version=kmip_version
+            )
+            protection_storage_masks.append(protection_storage_mask)
+        self._protection_storage_masks = protection_storage_masks
+
+        self.is_oversized(local_buffer)
+
+    def write(self, output_buffer, kmip_version=enums.KMIPVersion.KMIP_2_0):
+        """
+        Write the ProtectionStorageMasks structure encoding to the data stream.
+
+        Args:
+            output_buffer (stream): A data stream in which to encode
+                CapabilityInformation structure data, supporting a write
+                method.
+            kmip_version (enum): A KMIPVersion enumeration defining the KMIP
+                version with which the object will be encoded. Optional,
+                defaults to KMIP 2.0.
+
+        Raises:
+            VersionNotSupported: Raised when a KMIP version is provided that
+                does not support the ProtectionStorageMasks structure.
+        """
+        if kmip_version < enums.KMIPVersion.KMIP_2_0:
+            raise exceptions.VersionNotSupported(
+                "KMIP {} does not support the ProtectionStorageMasks "
+                "object.".format(
+                    kmip_version.value
+                )
+            )
+
+        local_buffer = BytearrayStream()
+
+        if self._protection_storage_masks:
+            for protection_storage_mask in self._protection_storage_masks:
+                protection_storage_mask.write(
+                    local_buffer,
+                    kmip_version=kmip_version
+                )
+
+        self.length = local_buffer.length()
+        super(ProtectionStorageMasks, self).write(
+            output_buffer,
+            kmip_version=kmip_version
+        )
+        output_buffer.write(local_buffer.buffer)
+
+    def __repr__(self):
+        v = "protection_storage_masks={}".format(
+            "[{}]".format(
+                ", ".join(str(x) for x in self.protection_storage_masks)
+            ) if self._protection_storage_masks else None
+        )
+
+        return "ProtectionStorageMasks({})".format(v)
+
+    def __str__(self):
+        v = '"protection_storage_masks": {}'.format(
+            "[{}]".format(
+                ", ".join(str(x) for x in self.protection_storage_masks)
+            ) if self._protection_storage_masks else None
+        )
+
+        return '{' + v + '}'
+
+    def __eq__(self, other):
+        if isinstance(other, ProtectionStorageMasks):
+            if self.protection_storage_masks != other.protection_storage_masks:
+                return False
+            else:
+                return True
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        if isinstance(other, ProtectionStorageMasks):
+            return not (self == other)
+        else:
+            return NotImplemented

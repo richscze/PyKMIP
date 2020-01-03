@@ -13,6 +13,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import six
+
 from kmip.core import enums
 from kmip.core.enums import Tags
 
@@ -23,6 +25,7 @@ from kmip.core.messages.contents import BatchErrorContinuationOption
 from kmip.core.factories.payloads.request import RequestPayloadFactory
 from kmip.core.factories.payloads.response import ResponsePayloadFactory
 
+from kmip.core import primitives
 from kmip.core.primitives import Struct
 
 from kmip.core.utils import BytearrayStream
@@ -58,6 +61,10 @@ class RequestHeader(Struct):
 
         self.protocol_version = contents.ProtocolVersion()
         self.protocol_version.read(tstream, kmip_version=kmip_version)
+
+        kmip_version = contents.protocol_version_to_kmip_version(
+            self.protocol_version
+        )
 
         # Read the maximum response size if it is present
         if self.is_tag_next(Tags.MAXIMUM_RESPONSE_SIZE, tstream):
@@ -142,12 +149,35 @@ class ResponseHeader(Struct):
     def __init__(self,
                  protocol_version=None,
                  time_stamp=None,
-                 batch_count=None):
+                 batch_count=None,
+                 server_hashed_password=None):
         super(ResponseHeader, self).__init__(tag=Tags.RESPONSE_HEADER)
         self.protocol_version = protocol_version
         self.time_stamp = time_stamp
         self.batch_count = batch_count
+        self.server_hashed_password = server_hashed_password
+
         self.validate()
+
+    @property
+    def server_hashed_password(self):
+        if self._server_hashed_password:
+            return self._server_hashed_password.value
+        return None
+
+    @server_hashed_password.setter
+    def server_hashed_password(self, value):
+        if value is None:
+            self._server_hashed_password = None
+        elif isinstance(value, six.binary_type):
+            self._server_hashed_password = primitives.ByteString(
+                value=value,
+                tag=enums.Tags.SERVER_HASHED_PASSWORD
+            )
+        else:
+            raise TypeError(
+                "The server hashed password must be a binary string."
+            )
 
     def read(self, istream, kmip_version=enums.KMIPVersion.KMIP_1_0):
         super(ResponseHeader, self).read(
@@ -159,8 +189,20 @@ class ResponseHeader(Struct):
         self.protocol_version = contents.ProtocolVersion()
         self.protocol_version.read(tstream, kmip_version=kmip_version)
 
+        kmip_version = contents.protocol_version_to_kmip_version(
+            self.protocol_version
+        )
+
         self.time_stamp = contents.TimeStamp()
         self.time_stamp.read(tstream, kmip_version=kmip_version)
+
+        if kmip_version >= enums.KMIPVersion.KMIP_2_0:
+            if self.is_tag_next(enums.Tags.SERVER_HASHED_PASSWORD, tstream):
+                server_hashed_password = primitives.ByteString(
+                    tag=enums.Tags.SERVER_HASHED_PASSWORD
+                )
+                server_hashed_password.read(tstream, kmip_version=kmip_version)
+                self._server_hashed_password = server_hashed_password
 
         self.batch_count = contents.BatchCount()
         self.batch_count.read(tstream, kmip_version=kmip_version)
@@ -174,6 +216,14 @@ class ResponseHeader(Struct):
         # Write the contents of a response header to the stream
         self.protocol_version.write(tstream, kmip_version=kmip_version)
         self.time_stamp.write(tstream, kmip_version=kmip_version)
+
+        if kmip_version >= enums.KMIPVersion.KMIP_2_0:
+            if self._server_hashed_password:
+                self._server_hashed_password.write(
+                    tstream,
+                    kmip_version=kmip_version
+                )
+
         self.batch_count.write(tstream, kmip_version=kmip_version)
 
         # Write the length and value of the request header
@@ -199,7 +249,8 @@ class RequestBatchItem(Struct):
                  operation=None,
                  unique_batch_item_id=None,
                  request_payload=None,
-                 message_extension=None):
+                 message_extension=None,
+                 ephemeral=None):
         super(RequestBatchItem, self).__init__(tag=Tags.REQUEST_BATCH_ITEM)
 
         self.payload_factory = RequestPayloadFactory()
@@ -208,6 +259,26 @@ class RequestBatchItem(Struct):
         self.unique_batch_item_id = unique_batch_item_id
         self.request_payload = request_payload
         self.message_extension = message_extension
+        self.ephemeral = ephemeral
+
+    @property
+    def ephemeral(self):
+        if self._ephemeral:
+            return self._ephemeral.value
+        return None
+
+    @ephemeral.setter
+    def ephemeral(self, value):
+        if value is None:
+            self._ephemeral = None
+        elif isinstance(value, bool):
+            ephemeral = primitives.Boolean(
+                value=value,
+                tag=enums.Tags.EPHEMERAL
+            )
+            self._ephemeral = ephemeral
+        else:
+            raise TypeError("The ephemeral value must be a boolean.")
 
     def read(self, istream, kmip_version=enums.KMIPVersion.KMIP_1_0):
         super(RequestBatchItem, self).read(
@@ -219,6 +290,12 @@ class RequestBatchItem(Struct):
         # Read the batch item operation
         self.operation = contents.Operation()
         self.operation.read(tstream, kmip_version=kmip_version)
+
+        if kmip_version >= enums.KMIPVersion.KMIP_2_0:
+            if self.is_tag_next(enums.Tags.EPHEMERAL, tstream):
+                ephemeral = primitives.Boolean(tag=enums.Tags.EPHEMERAL)
+                ephemeral.read(tstream, kmip_version=kmip_version)
+                self._ephemeral = ephemeral
 
         # Read the unique batch item ID if it is present
         if self.is_tag_next(Tags.UNIQUE_BATCH_ITEM_ID, tstream):
@@ -243,6 +320,10 @@ class RequestBatchItem(Struct):
 
         # Write the contents of the batch item to the stream
         self.operation.write(tstream, kmip_version=kmip_version)
+
+        if kmip_version >= enums.KMIPVersion.KMIP_2_0:
+            if self._ephemeral:
+                self._ephemeral.write(tstream, kmip_version=kmip_version)
 
         if self.unique_batch_item_id is not None:
             self.unique_batch_item_id.write(tstream, kmip_version=kmip_version)
@@ -394,6 +475,10 @@ class RequestMessage(Struct):
         self.request_header = RequestHeader()
         self.request_header.read(istream, kmip_version=kmip_version)
 
+        kmip_version = contents.protocol_version_to_kmip_version(
+            self.request_header.protocol_version
+        )
+
         self.batch_items = []
         for _ in range(self.request_header.batch_count.value):
             batch_item = RequestBatchItem()
@@ -433,6 +518,10 @@ class ResponseMessage(Struct):
 
         self.response_header = ResponseHeader()
         self.response_header.read(istream, kmip_version=kmip_version)
+
+        kmip_version = contents.protocol_version_to_kmip_version(
+            self.response_header.protocol_version
+        )
 
         self.batch_items = []
         for _ in range(self.response_header.batch_count.value):

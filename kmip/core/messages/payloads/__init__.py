@@ -13,6 +13,13 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+# Import payload base classes
+from kmip.core.messages.payloads.base import (
+    RequestPayload,
+    ResponsePayload
+)
+
+# Import payload subclasses
 from kmip.core.messages.payloads.activate import (
     ActivateRequestPayload,
     ActivateResponsePayload
@@ -40,6 +47,10 @@ from kmip.core.messages.payloads.create_key_pair import (
 from kmip.core.messages.payloads.decrypt import (
     DecryptRequestPayload,
     DecryptResponsePayload
+)
+from kmip.core.messages.payloads.delete_attribute import (
+    DeleteAttributeRequestPayload,
+    DeleteAttributeResponsePayload
 )
 from kmip.core.messages.payloads.derive_key import (
     DeriveKeyRequestPayload,
@@ -81,6 +92,10 @@ from kmip.core.messages.payloads.mac import (
     MACRequestPayload,
     MACResponsePayload
 )
+from kmip.core.messages.payloads.modify_attribute import (
+    ModifyAttributeRequestPayload,
+    ModifyAttributeResponsePayload
+)
 from kmip.core.messages.payloads.obtain_lease import (
     ObtainLeaseRequestPayload,
     ObtainLeaseResponsePayload
@@ -112,6 +127,10 @@ from kmip.core.messages.payloads.revoke import (
     RevokeRequestPayload,
     RevokeResponsePayload
 )
+from kmip.core.messages.payloads.set_attribute import (
+    SetAttributeRequestPayload,
+    SetAttributeResponsePayload
+)
 from kmip.core.messages.payloads.sign import (
     SignRequestPayload,
     SignResponsePayload
@@ -137,6 +156,8 @@ __all__ = [
     "CreateKeyPairResponsePayload",
     "DecryptRequestPayload",
     "DecryptResponsePayload",
+    "DeleteAttributeRequestPayload",
+    "DeleteAttributeResponsePayload",
     "DeriveKeyRequestPayload",
     "DeriveKeyResponsePayload",
     "DestroyRequestPayload",
@@ -157,6 +178,8 @@ __all__ = [
     "LocateResponsePayload",
     "MACRequestPayload",
     "MACResponsePayload",
+    "ModifyAttributeRequestPayload",
+    "ModifyAttributeResponsePayload",
     "ObtainLeaseRequestPayload",
     "ObtainLeaseResponsePayload",
     "PollRequestPayload",
@@ -170,8 +193,12 @@ __all__ = [
     "RekeyKeyPairResponsePayload",
     "RekeyRequestPayload",
     "RekeyResponsePayload",
+    "RequestPayload",
+    "ResponsePayload",
     "RevokeRequestPayload",
     "RevokeResponsePayload",
+    "SetAttributeRequestPayload",
+    "SetAttributeResponsePayload",
     "SignRequestPayload",
     "SignResponsePayload",
     "SignatureVerifyRequestPayload",

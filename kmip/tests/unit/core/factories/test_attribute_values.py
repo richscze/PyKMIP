@@ -156,10 +156,13 @@ class TestAttributeValueFactory(testtools.TestCase):
         """
         Test that a CertificateType attribute can be created.
         """
-        kwargs = {'name': enums.AttributeType.CERTIFICATE_TYPE,
-                  'value': None}
-        self.assertRaises(
-            NotImplementedError, self.factory.create_attribute_value, **kwargs)
+        certificate_type = self.factory.create_attribute_value(
+            name=enums.AttributeType.CERTIFICATE_TYPE,
+            value=enums.CertificateType.X_509
+        )
+        self.assertIsInstance(certificate_type, primitives.Enumeration)
+        self.assertEqual(enums.CertificateType.X_509, certificate_type.value)
+        self.assertEqual(enums.Tags.CERTIFICATE_TYPE, certificate_type.tag)
 
     def test_create_certificate_length(self):
         """
@@ -390,7 +393,21 @@ class TestAttributeValueFactory(testtools.TestCase):
         """
         Test that an ObjectGroup attribute can be created.
         """
-        self.skipTest('')
+        object_group = self.factory.create_attribute_value(
+            enums.AttributeType.OBJECT_GROUP,
+            "Group1"
+        )
+        self.assertIsInstance(object_group, primitives.TextString)
+        self.assertEqual("Group1", object_group.value)
+        self.assertEqual(enums.Tags.OBJECT_GROUP, object_group.tag)
+
+        object_group = self.factory.create_attribute_value_by_enum(
+            enums.Tags.OBJECT_GROUP,
+            "Group1"
+        )
+        self.assertIsInstance(object_group, primitives.TextString)
+        self.assertEqual("Group1", object_group.value)
+        self.assertEqual(enums.Tags.OBJECT_GROUP, object_group.tag)
 
     def test_create_fresh(self):
         """
@@ -415,7 +432,55 @@ class TestAttributeValueFactory(testtools.TestCase):
         """
         Test that an ApplicationSpecificInformation attribute can be created.
         """
-        self.skipTest('')
+        attribute = self.factory.create_attribute_value(
+            enums.AttributeType.APPLICATION_SPECIFIC_INFORMATION,
+            {
+                "application_namespace": "ssl",
+                "application_data": "www.example.com"
+            }
+        )
+        self.assertIsInstance(
+            attribute,
+            attributes.ApplicationSpecificInformation
+        )
+        self.assertEqual("ssl", attribute.application_namespace)
+        self.assertEqual("www.example.com", attribute.application_data)
+
+        attribute = self.factory.create_attribute_value(
+            enums.AttributeType.APPLICATION_SPECIFIC_INFORMATION,
+            None
+        )
+        self.assertIsInstance(
+            attribute,
+            attributes.ApplicationSpecificInformation
+        )
+        self.assertIsNone(attribute.application_namespace)
+        self.assertIsNone(attribute.application_data)
+
+        attribute = self.factory.create_attribute_value_by_enum(
+            enums.Tags.APPLICATION_SPECIFIC_INFORMATION,
+            {
+                "application_namespace": "ssl",
+                "application_data": "www.example.com"
+            }
+        )
+        self.assertIsInstance(
+            attribute,
+            attributes.ApplicationSpecificInformation
+        )
+        self.assertEqual("ssl", attribute.application_namespace)
+        self.assertEqual("www.example.com", attribute.application_data)
+
+        attribute = self.factory.create_attribute_value_by_enum(
+            enums.Tags.APPLICATION_SPECIFIC_INFORMATION,
+            None
+        )
+        self.assertIsInstance(
+            attribute,
+            attributes.ApplicationSpecificInformation
+        )
+        self.assertIsNone(attribute.application_namespace)
+        self.assertIsNone(attribute.application_data)
 
     def test_create_contact_information(self):
         """
@@ -440,3 +505,23 @@ class TestAttributeValueFactory(testtools.TestCase):
         custom = self.factory.create_attribute_value(
             enums.AttributeType.CUSTOM_ATTRIBUTE, None)
         self.assertIsInstance(custom, attributes.CustomAttribute)
+
+    def test_create_sensitive(self):
+        """
+        Test that a Sensitive attribute can be created.
+        """
+        sensitive = self.factory.create_attribute_value(
+            enums.AttributeType.SENSITIVE,
+            True
+        )
+        self.assertIsInstance(sensitive, primitives.Boolean)
+        self.assertTrue(sensitive.value)
+        self.assertEqual(enums.Tags.SENSITIVE, sensitive.tag)
+
+        sensitive = self.factory.create_attribute_value_by_enum(
+            enums.Tags.SENSITIVE,
+            False
+        )
+        self.assertIsInstance(sensitive, primitives.Boolean)
+        self.assertFalse(sensitive.value)
+        self.assertEqual(enums.Tags.SENSITIVE, sensitive.tag)

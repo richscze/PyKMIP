@@ -38,7 +38,11 @@ class AttributeValueFactory(object):
         elif name is enums.AttributeType.CRYPTOGRAPHIC_DOMAIN_PARAMETERS:
             raise NotImplementedError()
         elif name is enums.AttributeType.CERTIFICATE_TYPE:
-            raise NotImplementedError()
+            return primitives.Enumeration(
+                enums.CertificateType,
+                value=value,
+                tag=enums.Tags.CERTIFICATE_TYPE
+            )
         elif name is enums.AttributeType.CERTIFICATE_LENGTH:
             return primitives.Integer(value, enums.Tags.CERTIFICATE_LENGTH)
         elif name is enums.AttributeType.X_509_CERTIFICATE_IDENTIFIER:
@@ -89,7 +93,7 @@ class AttributeValueFactory(object):
         elif name is enums.AttributeType.ARCHIVE_DATE:
             return primitives.DateTime(value, enums.Tags.ARCHIVE_DATE)
         elif name is enums.AttributeType.OBJECT_GROUP:
-            return self._create_object_group(value)
+            return primitives.TextString(value, enums.Tags.OBJECT_GROUP)
         elif name is enums.AttributeType.FRESH:
             return primitives.Boolean(value, enums.Tags.FRESH)
         elif name is enums.AttributeType.LINK:
@@ -100,6 +104,8 @@ class AttributeValueFactory(object):
             return self._create_contact_information(value)
         elif name is enums.AttributeType.LAST_CHANGE_DATE:
             return primitives.DateTime(value, enums.Tags.LAST_CHANGE_DATE)
+        elif name is enums.AttributeType.SENSITIVE:
+            return primitives.Boolean(value, enums.Tags.SENSITIVE)
         elif name is enums.AttributeType.CUSTOM_ATTRIBUTE:
             return attributes.CustomAttribute(value)
         else:
@@ -178,6 +184,7 @@ class AttributeValueFactory(object):
         elif enum is enums.Tags.ARCHIVE_DATE:
             return primitives.DateTime(value, enums.Tags.ARCHIVE_DATE)
         elif enum is enums.Tags.OBJECT_GROUP:
+            return primitives.TextString(value, enums.Tags.OBJECT_GROUP)
             return self._create_object_group(value)
         elif enum is enums.Tags.FRESH:
             return primitives.Boolean(value, enums.Tags.FRESH)
@@ -189,6 +196,8 @@ class AttributeValueFactory(object):
             return self._create_contact_information(value)
         elif enum is enums.Tags.LAST_CHANGE_DATE:
             return primitives.DateTime(value, enums.Tags.LAST_CHANGE_DATE)
+        elif enum is enums.Tags.SENSITIVE:
+            return primitives.Boolean(value, enums.Tags.SENSITIVE)
         elif enum is enums.Tags.CUSTOM_ATTRIBUTE:
             return attributes.CustomAttribute(value)
         else:
@@ -263,38 +272,14 @@ class AttributeValueFactory(object):
 
         return attributes.CryptographicUsageMask(mask)
 
-    def _create_object_group(self, group):
-        if group is not None and not isinstance(group, str):
-            msg = utils.build_er_error(attributes.ObjectGroup,
-                                       'constructor argument type', str,
-                                       type(group))
-            raise TypeError(msg)
-
-        return attributes.ObjectGroup(group)
-
     def _create_application_specific_information(self, info):
-        if info is None:
-            return attributes.ApplicationSpecificInformation()
+        if info:
+            return attributes.ApplicationSpecificInformation(
+                application_namespace=info.get("application_namespace"),
+                application_data=info.get("application_data")
+            )
         else:
-            application_namespace = info.get('application_namespace')
-            application_data = info.get('application_data')
-
-            if not isinstance(application_namespace, str):
-                msg = utils.build_er_error(
-                    attributes.ApplicationSpecificInformation,
-                    'constructor argument type',
-                    str, type(application_namespace))
-                raise TypeError(msg)
-
-            if not isinstance(application_data, str):
-                msg = utils.build_er_error(
-                    attributes.ApplicationSpecificInformation,
-                    'constructor argument type',
-                    str, type(application_data))
-                raise TypeError(msg)
-
-            return attributes.ApplicationSpecificInformation.create(
-                application_namespace, application_data)
+            return attributes.ApplicationSpecificInformation()
 
     def _create_contact_information(self, info):
         if info is None:
